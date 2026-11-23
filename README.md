@@ -18,6 +18,16 @@ Universal Web.
 
 El diseño completo (datos, reglas, acceso, pantallas, MCP) está en [`docs/DISENO.md`](docs/DISENO.md).
 
+## Cómo se ve
+
+| Configurar en la tablet | El precio por tramo, también con 58,5 cm |
+|---|---|
+| ![Paso 2 en tablet](docs/capturas/paso2-tablet.png) | ![Cajonera de 58,5 cm](docs/capturas/paso2-tablet-58-5.png) |
+
+| Despiece por fórmulas en el panel | En el móvil |
+|---|---|
+| ![Despiece en el panel](docs/capturas/panel-despiece-vivo-tablet.png) | ![Paso 2 en móvil](docs/capturas/paso2-movil.png) |
+
 ## Requisitos
 
 - PHP 8.2 o superior con `pdo_sqlite`, `mbstring`, `sodium` y `json`.
