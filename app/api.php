@@ -34,7 +34,7 @@ function api_dispatch(string $method, string $path, array $body, ?string $csrf):
         }
         if ($method === 'GET' && $path === '/api/module-types') {
             $node = parse_int($body['node'] ?? null, 'node');
-            if (!node_get($node)) return [404, ['ok' => false, 'error' => t('Ese nodo no existe.')]];
+            if (!node_get($node) || !node_branch_active($node)) return [404, ['ok' => false, 'error' => t('Ese nodo no existe.')]];
             return [200, ['ok' => true, 'types' => module_types_for_node($node)]];
         }
         if ($path === '/api/configurations') {
@@ -73,8 +73,11 @@ function module_types_for_node(int $nodeId): array
     foreach (module_types_all() as $t) {
         $eff = tiers_effective((int) $t['id'], $nodeId);
         if (!$eff['tiers']) continue; // sin tramos para este modelo no se puede usar
-        $out[] = ['id' => (int) $t['id'], 'name' => $t['name'], 'ref' => $t['ref'], 'family' => $t['family'], 'depth_mm' => (int) $t['depth_mm'],
-            'tiers' => tiers_public($eff['tiers']), 'suggested_width_cm' => ancho_sugerido((int) $t['id'], $nodeId)];
+        $sug = ancho_sugerido((int) $t['id'], $nodeId);
+        $out[] = ['id' => (int) $t['id'], 'name' => $t['name'], 'ref' => $t['ref'], 'family' => $t['family'],
+            'width_mm' => (int) $t['width_mm'], 'height_mm' => (int) $t['height_mm'], 'depth_mm' => (int) $t['depth_mm'],
+            'min_width_mm' => $t['min_width_mm'] === null ? null : (int) $t['min_width_mm'], 'max_width_mm' => $t['max_width_mm'] === null ? null : (int) $t['max_width_mm'],
+            'tiers' => tiers_public($eff['tiers']), 'suggested_width_cm' => mm_to_cm($sug), 'suggested_width_mm' => $sug];
     }
     return $out;
 }

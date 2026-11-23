@@ -15,6 +15,7 @@ require UC_ROOT . '/app/auth_providers.php';
 require UC_ROOT . '/app/catalog.php';
 require UC_ROOT . '/app/expr.php';
 require UC_ROOT . '/app/pricing.php';
+require UC_ROOT . '/app/parts.php';
 require UC_ROOT . '/app/configurations.php';
 require UC_ROOT . '/app/front.php';
 require UC_ROOT . '/app/api.php';

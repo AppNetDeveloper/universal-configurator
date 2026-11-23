@@ -122,23 +122,39 @@ function seed_sample(): void
         $colors = [['Blanco', '#F8FAFC', 'Laca blanca mate'], ['Roble', '#C8A165', 'Madera natural de roble'], ['Antracita', '#374151', 'Gris antracita mate'], ['Madera', '#8B5E3C', 'Nogal oscuro']];
         foreach ($models as $mid) foreach ($colors as [$n, $hex, $d]) node_create($mid, ['name' => $n, 'image' => $hex, 'description' => $d]);
 
-        // [nombre, ref, familia, fondo mm, [[desde, hasta, €], …]]
+        // Despiece por fórmulas (W ancho, H alto, D fondo en mm; T tablero 19, B trasera 8). [nombre, cant., espesor, largo, ancho, veta, canto]
+        $casco = [['Lateral', 2, 'T', 'H', 'D', 'largo', '1L'], ['Base', 1, 'T', 'W - 2*T', 'D', 'largo', '1L'],
+            ['Travesaño', 2, 'T', 'W - 2*T', '100', 'largo', ''], ['Trasera', 1, 'B', 'H - 3', 'W - 3', '', '']];
+        $cascoAlto = [['Lateral', 2, 'T', 'H', 'D', 'largo', '1L'], ['Base', 1, 'T', 'W - 2*T', 'D', 'largo', '1L'],
+            ['Techo', 1, 'T', 'W - 2*T', 'D', 'largo', '1L'], ['Trasera', 1, 'B', 'H - 3', 'W - 3', '', '']];
+        $balda = ['Balda', 1, 'T', 'W - 2*T - 2', 'D - 40', 'largo', '1L'];
+        $puerta1 = ['Puerta', 1, 'T', 'H - 4', 'W - 4', 'largo', '4L'];
+        $puerta2 = ['Puerta', 2, 'T', 'H - 4', '(W - 7) / 2', 'largo', '4L'];
+        $cajones = [['Frente de cajón', 3, 'T', 'W - 4', '(H - 12) / 3', 'largo', '4L'], ['Lateral de cajón', 6, '16', 'D - 60', '150', 'largo', '1L'],
+            ['Frente y trasera de caja', 6, '16', 'W - 2*T - 58', '150', 'largo', '1L'], ['Fondo de cajón', 3, 'B', 'D - 62', 'W - 2*T - 26', '', '']];
+        // [nombre, familia, [ancho, alto, fondo] mm por defecto, [[desde, hasta, €] cm], piezas]
         $types = [
-            'B1P' => ['Bajo 1 puerta', 'bajo', 560, [[30, 40, 85], [41, 50, 95], [51, 60, 110]]],
-            'B2P' => ['Bajo 2 puertas', 'bajo', 560, [[61, 80, 150], [81, 100, 175], [101, 120, 205]]],
-            'CAJ3' => ['Cajonera 3 cajones', 'bajo', 560, [[40, 50, 160], [51, 60, 185], [61, 80, 225], [81, 90, 250]]],
-            'FRG' => ['Bajo fregadero', 'bajo', 560, [[60, 80, 140], [81, 100, 165], [101, 120, 190]]],
-            'LVV' => ['Lavavajillas integrable', 'bajo', 560, [[45, 45, 90], [60, 60, 110]]],
-            'CHO' => ['Columna horno', 'columna', 560, [[60, 60, 260]]],
-            'CFR' => ['Columna frigorífico', 'columna', 600, [[60, 60, 240], [61, 90, 310]]],
-            'A1P' => ['Alto 1 puerta', 'alto', 330, [[30, 40, 60], [41, 60, 75]]],
-            'A2P' => ['Alto 2 puertas', 'alto', 330, [[61, 80, 105], [81, 100, 125]]],
+            'B1P' => ['Bajo 1 puerta', 'bajo', [450, 720, 560], [[30, 40, 85], [41, 50, 95], [51, 60, 110]], [...$casco, $balda, $puerta1]],
+            'B2P' => ['Bajo 2 puertas', 'bajo', [800, 720, 560], [[61, 80, 150], [81, 100, 175], [101, 120, 205]], [...$casco, $balda, $puerta2]],
+            'CAJ3' => ['Cajonera 3 cajones', 'bajo', [600, 720, 560], [[40, 50, 160], [51, 60, 185], [61, 80, 225], [81, 90, 250]], [...$casco, ...$cajones]],
+            'FRG' => ['Bajo fregadero', 'bajo', [800, 720, 560], [[60, 80, 140], [81, 100, 165], [101, 120, 190]], [...$casco, $puerta2]],
+            'LVV' => ['Lavavajillas integrable', 'bajo', [600, 720, 560], [[45, 45, 90], [60, 60, 110]], [['Frente', 1, 'T', 'H - 4', 'W - 4', 'largo', '4L']]],
+            'CHO' => ['Columna horno', 'columna', [600, 2100, 560], [[60, 60, 260]], [...$cascoAlto, ['Balda del horno', 1, 'T', 'W - 2*T', 'D - 20', 'largo', '1L'], $balda,
+                ['Puerta inferior', 1, 'T', '716', 'W - 4', 'largo', '4L'], ['Puerta superior', 1, 'T', 'H - 720 - 600 - 12', 'W - 4', 'largo', '4L']]],
+            'CFR' => ['Columna frigorífico', 'columna', [600, 2100, 600], [[60, 60, 240], [61, 90, 310]], [...$cascoAlto, $balda,
+                ['Puerta inferior', 1, 'T', '1300', 'W - 4', 'largo', '4L'], ['Puerta superior', 1, 'T', 'H - 1300 - 8', 'W - 4', 'largo', '4L']]],
+            'A1P' => ['Alto 1 puerta', 'alto', [400, 720, 330], [[30, 40, 60], [41, 60, 75]], [...$cascoAlto, ['Balda', 1, 'T', 'W - 2*T - 2', 'D - 20 - B', 'largo', '1L'], $puerta1]],
+            'A2P' => ['Alto 2 puertas', 'alto', [800, 720, 330], [[61, 80, 105], [81, 100, 125]], [...$cascoAlto, ['Balda', 1, 'T', 'W - 2*T - 2', 'D - 20 - B', 'largo', '1L'], $puerta2]],
         ];
         $tid = [];
         $sort = 10;
-        foreach ($types as $ref => [$name, $family, $depth, $tiers]) {
-            $tid[$ref] = module_type_save(['name' => $name, 'ref' => $ref, 'family' => $family, 'depth_mm' => $depth, 'sort' => $sort += 10]);
+        foreach ($types as $ref => [$name, $family, [$w, $h, $d], $tiers, $parts]) {
+            $tid[$ref] = module_type_save(['name' => $name, 'ref' => $ref, 'family' => $family, 'width_mm' => $w, 'height_mm' => $h, 'depth_mm' => $d,
+                'min_width_mm' => min(array_column($tiers, 0)) * 10, 'max_width_mm' => max(array_column($tiers, 1)) * 10, 'board_mm' => 19, 'back_mm' => 8, 'sort' => $sort += 10]);
             foreach ($tiers as [$f, $to, $eur]) tier_save($tid[$ref], null, $f, $to, $eur * 100);
+            foreach ($parts as $i => [$pn, $q, $th, $len, $wid, $grain, $edge]) {
+                module_part_save($tid[$ref], ['name' => $pn, 'qty' => $q, 'thickness' => $th, 'length_expr' => $len, 'width_expr' => $wid, 'grain' => $grain, 'edge_banding' => $edge, 'sort' => ($i + 1) * 10]);
+            }
         }
         // Escala lleva una cajonera de gama alta: tramos propios que sustituyen a los generales en sus colores.
         tier_save($tid['CAJ3'], $models['escala'], 40, 60, 21000);

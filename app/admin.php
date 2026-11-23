@@ -140,9 +140,34 @@ function admin_handle(string $path, string $method): void
                 flash(t('Guardado.'));
                 admin_back("/tipos/$tid");
             }
-            $tiers = rows('SELECT * FROM price_tiers WHERE module_type_id = ? ORDER BY node_id IS NOT NULL, node_id, from_cm', [$tid]);
-            admin_render('type_edit', '/tipos', ['title' => $type['name'], 'type' => $type, 'tiers' => $tiers, 'nodes' => admin_node_options()]);
+            $tiers = array_map(fn($r) => tier_row($r) + ['node_id' => $r['node_id'] === null ? null : (int) $r['node_id']],
+                rows('SELECT * FROM price_tiers WHERE module_type_id = ? ORDER BY node_id IS NOT NULL, node_id, from_mm', [$tid]));
+            admin_render('type_edit', '/tipos', ['title' => $type['name'], 'type' => $type, 'tiers' => $tiers, 'nodes' => admin_node_options(),
+                'parts' => module_parts_of($tid), 'preview' => piezas_de_linea(['module_type_id' => $tid])]);
             return;
+        }
+        if ($post && $match('/tipos/(\d+)/despiece/probar')) {
+            // Vista previa en vivo de una pieza (JSON para el panel): no guarda nada.
+            $type = module_type_get((int) $m[1]) ?? throw new UcError(t('Ese tipo no existe.'), [], 404);
+            $vars = part_vars($type);
+            $res = [];
+            foreach (['thickness', 'length_expr', 'width_expr'] as $k) {
+                try { $v = round_half(expr_value((string) ($_POST[$k] ?? ''), $vars)); $res[$k] = $v > 0 ? ['ok' => true, 'mm' => $v, 'text' => mm_text($v) . ' mm'] : ['ok' => false, 'error' => t('da {v} mm: tiene que ser mayor que 0', ['v' => mm_text($v)])]; }
+                catch (UcError $ex) { $res[$k] = ['ok' => false, 'error' => $ex->getMessage()]; }
+            }
+            json_response(['ok' => true, 'vars' => $vars, 'result' => $res]);
+            return;
+        }
+        if ($post && $match('/tipos/(\d+)/pieza(?:/(\d+))?(/borrar)?')) {
+            $tid = (int) $m[1];
+            $pid = isset($m[2]) && $m[2] !== '' ? (int) $m[2] : null;
+            try {
+                if (!empty($m[3])) { module_part_delete($tid, (int) $pid); flash(t('Pieza borrada.')); admin_back("/tipos/$tid"); }
+                module_part_save($tid, $_POST, $pid);
+            } catch (UcError $ex) { admin_back("/tipos/$tid", $ex); }
+            unset($_SESSION['old']);
+            flash(t('Pieza guardada.'));
+            admin_back("/tipos/$tid");
         }
         if ($post && $match('/tipos/(\d+)/activar')) {
             module_type_set_active((int) $m[1], !empty($_POST['active']));
@@ -182,7 +207,7 @@ function admin_handle(string $path, string $method): void
             audit('config.export', count($views) . ' configuraciones (CSV)');
             return;
         }
-        if ($match('/configuraciones/(UC-[A-Z0-9]{8})(\.json|\.csv|/anular)?')) {
+        if ($match('/configuraciones/(UC-[A-Z0-9]{8})(\.json|\.csv|-despiece\.csv|-corte\.csv|/anular)?')) {
             $code = $m[1];
             $ext = $m[2] ?? '';
             if ($post && $ext === '/anular') {
@@ -193,7 +218,9 @@ function admin_handle(string $path, string $method): void
             $cfg = config_get($code, $viewer);
             if ($ext === '.json') { admin_download("$code.json", 'application/json', config_export_json($cfg)); audit('config.export', "$code (JSON)"); return; }
             if ($ext === '.csv') { admin_download("$code.csv", 'text/csv', config_export_csv([$cfg])); audit('config.export', "$code (CSV)"); return; }
-            admin_render('config_view', '/configuraciones', ['title' => $code, 'cfg' => $cfg]);
+            if ($ext === '-despiece.csv') { admin_download("$code-despiece.csv", 'text/csv', config_export_parts_csv($cfg)); audit('config.export', "$code (despiece CSV)"); return; }
+            if ($ext === '-corte.csv') { admin_download("$code-corte.csv", 'text/csv', config_export_cut_csv($cfg)); audit('config.export', "$code (lista de corte CSV)"); return; }
+            admin_render('config_view', '/configuraciones', ['title' => $code, 'cfg' => $cfg, 'cut' => cut_list($cfg)]);
             return;
         }
 

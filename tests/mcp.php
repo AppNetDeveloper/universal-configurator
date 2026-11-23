@@ -54,13 +54,13 @@ check('initialize: versión, nombre e instrucciones con el flujo', function () u
     return eq('2025-06-18', $r['protocolVersion']) && eq('universal-configurator', $r['serverInfo']['name'])
         && eq(true, str_contains($r['instructions'], 'config_create') && str_contains($r['instructions'], 'price_check') && str_contains($r['instructions'], 'NO dibuja'));
 });
-check('tools/list con token write: las 8 herramientas', function () use ($rpc, $tAdminRW) {
+check('tools/list con token write: las 9 herramientas', function () use ($rpc, $tAdminRW) {
     $names = array_column(((array) $rpc($tAdminRW, 'tools/list')['result'])['tools'], 'name');
     sort($names);
-    return eq(['catalog_tree', 'config_accept', 'config_create', 'config_get', 'config_list', 'config_update', 'module_types', 'price_check'], $names);
+    return eq(['catalog_tree', 'config_accept', 'config_create', 'config_get', 'config_list', 'config_update', 'cut_list', 'module_types', 'price_check'], $names);
 });
-check('tools/list con token read: solo las 5 de lectura', function () use ($rpc, $tAdminR) {
-    return eq(5, count(((array) $rpc($tAdminR, 'tools/list')['result'])['tools']));
+check('tools/list con token read: solo las 6 de lectura', function () use ($rpc, $tAdminR) {
+    return eq(6, count(((array) $rpc($tAdminR, 'tools/list')['result'])['tools']));
 });
 check('config_accept avisa en su descripción de que lo confirma la persona', function () use ($rpc, $tAdminRW) {
     $tools = array_column(((array) $rpc($tAdminRW, 'tools/list')['result'])['tools'], 'description', 'name');
@@ -156,5 +156,53 @@ check('config_create con copy_of duplica una aceptada en borrador', function () 
 });
 check('el uso del token queda registrado', fn() => eq(true, val('SELECT last_used_at FROM mcp_tokens WHERE token_hash = ?', [hash('sha256', $tAna)]) !== null)
     && eq(true, (int) val("SELECT COUNT(*) FROM audit_log WHERE actor LIKE 'MCP:%'") > 0));
+
+// --- parámetros desconocidos: error en TODAS las herramientas (nunca se ignoran)
+foreach (['catalog_tree' => [], 'module_types' => [], 'config_list' => [], 'config_get' => ['code' => $code], 'price_check' => ['node_id' => $c['blanco'], 'modules' => []],
+    'config_create' => ['node_id' => $c['blanco']], 'config_update' => ['code' => $code, 'ops' => []], 'config_accept' => ['code' => $code], 'cut_list' => ['code' => $code]] as $tool => $args) {
+    check("$tool con un parámetro que no existe: error que dice cuál sobra y cuáles valen", function () use ($call, $tAdminRW, $tool, $args, $err) {
+        $before = (int) val('SELECT COUNT(*) FROM configurations');
+        $r = $call($tAdminRW, $tool, $args + ['sobrante' => 1]);
+        return $err($r, "«sobrante»") && $err($r, 'Valen:') && $err($r, 'Ejemplo') && $err($r, 'No se ha hecho nada') && eq($before, (int) val('SELECT COUNT(*) FROM configurations'));
+    });
+}
+check('config_update: campo desconocido dentro de una operación', function () use ($call, $tAna, $c, $ok, $err) {
+    $d = $ok($call($tAna, 'config_create', ['node_id' => $c['blanco']]))['config'];
+    return $err($call($tAna, 'config_update', ['code' => $d['code'], 'ops' => [['op' => 'customer', 'nombre' => 'X']]]), 'nombre');
+});
+check('price_check: campo desconocido dentro de un módulo', fn() => $err($call($tAna, 'price_check', ['node_id' => $c['blanco'], 'modules' => [['module_type_id' => $c['bajo'], 'ancho' => 40]]]), 'ancho'));
+check('config_create guarda el cliente (customer)', function () use ($call, $tAna, $c, $ok) {
+    $d = $ok($call($tAna, 'config_create', ['node_id' => $c['blanco'], 'customer' => ['name' => 'Marta Ruiz', 'email' => 'marta@x.test', 'phone' => '600 123 123']]))['config'];
+    return eq(['name' => 'Marta Ruiz', 'email' => 'marta@x.test', 'phone' => '600 123 123'], $d['customer']);
+});
+check('config_create: customer con un campo que no existe es un error y no crea nada', function () use ($call, $tAna, $c, $err) {
+    $before = (int) val('SELECT COUNT(*) FROM configurations');
+    return $err($call($tAna, 'config_create', ['node_id' => $c['blanco'], 'customer' => ['nombre' => 'X']]), 'nombre') && eq($before, (int) val('SELECT COUNT(*) FROM configurations'));
+});
+
+// --- medidas y despiece por MCP
+module_part_save($c['bajo'], ['name' => 'Lateral', 'qty' => 2, 'thickness' => 'T', 'length_expr' => 'H', 'width_expr' => 'D', 'grain' => 'largo']);
+module_part_save($c['bajo'], ['name' => 'Base', 'qty' => 1, 'thickness' => 'T', 'length_expr' => 'W - 2*T', 'width_expr' => 'D']);
+check('module_types: medidas por defecto, espesores y fórmulas', function () use ($call, $tAna, $c, $ok) {
+    $t = array_values(array_filter($ok($call($tAna, 'module_types'))['types'], fn($x) => $x['id'] === $c['bajo']))[0];
+    return eq(true, isset($t['width_mm'], $t['height_mm'], $t['depth_mm'], $t['board_mm'], $t['back_mm'])) && eq('W - 2*T', $t['parts'][1]['length_expr']) && eq('T', $t['parts'][1]['thickness']);
+});
+$dec = $ok($call($tAna, 'config_create', ['node_id' => $c['blanco']]))['config'];
+check('config_update con 58,5 cm y config_get con width_mm, height_mm, depth_mm y parts', function () use ($call, $tAna, $dec, $ok) {
+    $it = $dec['walls'][0]['items'][1]['id'];
+    $ok($call($tAna, 'config_update', ['code' => $dec['code'], 'ops' => [['op' => 'set_width', 'item_id' => $it, 'width_cm' => 58.5]]]));
+    $l = $ok($call($tAna, 'config_get', ['code' => $dec['code']]))['config']['walls'][0]['items'][1];
+    $base = array_column($l['parts'], null, 'name')['Base'];
+    return eq(585, $l['width_mm']) && eq(560, $l['depth_mm']) && eq(true, $l['height_mm'] > 0) && eq(547.0, $base['length_mm']) && eq(19.0, $base['thickness_mm']);
+});
+check('cut_list: lista de corte agregada con su origen', function () use ($call, $tAna, $dec, $ok) {
+    $d = $ok($call($tAna, 'cut_list', ['code' => $dec['code']]));
+    $lat = array_values(array_filter($d['cut_list'], fn($r) => $r['name'] === 'Lateral'))[0];
+    return eq(4, $lat['qty']) && eq(2, count($lat['from'])) && eq(true, isset($lat['from'][0]['item_id'], $lat['from'][0]['module']));
+});
+check('cut_list de otro comercial: No existe', fn() => $err($call($tBeto, 'cut_list', ['code' => $dec['code']]), 'No existe'));
+check('initialize dice cómo dibujar en CAD', function () use ($rpc, $tAna) {
+    return eq(true, (bool) stripos(((array) $rpc($tAna, 'initialize')['result'])['instructions'], 'para dibujar en CAD usa config_get (medidas y despiece) o cut_list'));
+});
 
 done();

@@ -61,26 +61,35 @@ function viewer_label(?array $viewer): string
 
 // ---------------------------------------------------------------- crear y duplicar
 
-function config_create(int $nodeId, ?array $viewer): array
+/**
+ * Borrador nuevo desde un nodo final con su composición por defecto. $customer opcional: name, email, phone
+ * (cualquier otra clave es un error: no se ignora nada en silencio).
+ */
+function config_create(int $nodeId, ?array $viewer, array $customer = []): array
 {
     if ($viewer === null) throw new UcError(t('Entra con tu cuenta (o como invitado, si se permite) para configurar.'), [], 401);
     $node = node_get($nodeId);
     if (!$node || !node_branch_active($nodeId)) throw new UcError(t('El nodo {id} no existe o no está disponible.', ['id' => $nodeId]), [], 404);
-    if ($viewer['kind'] === 'guest' && !throttle('guest-create:' . client_ip(), 30, 3600)) throw new UcError(t('Demasiadas configuraciones nuevas desde esta conexión. Prueba dentro de un rato.'), [], 429);
+    $cust = config_customer_input($customer);
     if (!node_is_final($nodeId)) {
         $kids = implode(', ', array_map(fn($k) => "{$k['id']} ({$k['name']})", node_children($nodeId)));
         throw new UcError(t('«{n}» no es un nodo final: elige uno de sus hijos: {hijos}.', ['n' => $node['name'], 'hijos' => $kids]));
     }
-    $code = tx(function () use ($nodeId, $viewer) {
+    guest_create_limit($viewer);
+    $code = tx(function () use ($nodeId, $viewer, $cust) {
         $code = config_code_new();
         $cid = insert('configurations', ['code' => $code, 'node_id' => $nodeId, 'user_id' => $viewer['kind'] === 'user' ? (int) $viewer['user']['id'] : null,
-            'status' => 'draft', 'tax_rate' => tax_rate(), 'created_at' => now(), 'updated_at' => now()]);
+            'status' => 'draft', 'tax_rate' => tax_rate(), 'created_at' => now(), 'updated_at' => now()] + $cust);
         $layout = layout_for($nodeId);
         if (!$layout['walls']) $layout['walls'] = [['name' => t('Pared 1'), 'direction' => 'x', 'origin_x_mm' => 0, 'origin_y_mm' => 0, 'sort' => 10, 'modules' => []]];
         foreach ($layout['walls'] as $w) {
             $wid = insert('config_walls', ['configuration_id' => $cid, 'name' => $w['name'], 'direction' => $w['direction'],
                 'origin_x_mm' => (int) $w['origin_x_mm'], 'origin_y_mm' => (int) $w['origin_y_mm'], 'sort' => (int) $w['sort']]);
-            foreach ($w['modules'] as $m) insert('config_items', ['config_wall_id' => $wid, 'module_type_id' => (int) $m['module_type_id'], 'width_cm' => (int) $m['width_cm'], 'sort' => (int) $m['sort']]);
+            foreach ($w['modules'] as $m) {
+                $t = module_type_get((int) $m['module_type_id']);
+                insert('config_items', ['config_wall_id' => $wid, 'module_type_id' => (int) $m['module_type_id'], 'width_mm' => (int) $m['width_mm'],
+                    'height_mm' => (int) $t['height_mm'], 'depth_mm' => (int) $t['depth_mm'], 'sort' => (int) $m['sort']]);
+            }
         }
         config_touch($cid);
         return $code;
@@ -93,11 +102,43 @@ function config_create(int $nodeId, ?array $viewer): array
     return config_view(config_find($code, $viewer));
 }
 
+/** Invitado: como mucho 30 configuraciones nuevas (crear o duplicar) por hora y conexión. */
+function guest_create_limit(array $viewer): void
+{
+    if ($viewer['kind'] === 'guest' && !throttle('guest-create:' . client_ip(), 30, 3600)) throw new UcError(t('Demasiadas configuraciones nuevas desde esta conexión. Prueba dentro de un rato.'), [], 429);
+}
+
+/** Datos del cliente (name, email, phone, notes) → columnas. Una clave que no existe es un error. */
+function config_customer_input(array $in, bool $withNotes = false): array
+{
+    $map = ['name' => 'customer_name', 'email' => 'customer_email', 'phone' => 'customer_phone'] + ($withNotes ? ['notes' => 'notes'] : []);
+    reject_unknown_keys($in, array_keys($map), 'customer');
+    $d = [];
+    foreach ($map as $k => $col) {
+        if (!array_key_exists($k, $in)) continue;
+        if (!is_scalar($in[$k]) && $in[$k] !== null) throw new UcError(t('customer.{k} tiene que ser texto.', ['k' => $k]));
+        $v = trim((string) $in[$k]);
+        if ($k === 'email' && $v !== '' && !filter_var($v, FILTER_VALIDATE_EMAIL)) throw new UcError(t('El correo «{v}» no es válido.', ['v' => $v]));
+        $d[$col] = mb_substr($v, 0, $k === 'notes' ? 4000 : 160);
+    }
+    return $d;
+}
+
+/** Un campo que no está en $allowed es un error que dice cuál sobra y cuáles valen (nunca se ignora en silencio). */
+function reject_unknown_keys(array $in, array $allowed, string $where): void
+{
+    $extra = array_values(array_diff(array_keys($in), $allowed));
+    if ($extra) {
+        throw new UcError(t('{donde}: el campo «{c}» no existe. Valen: {v}.', ['donde' => $where, 'c' => implode('», «', array_map('strval', $extra)), 'v' => implode(', ', $allowed)]));
+    }
+}
+
 /** Duplica (cualquier estado) en un borrador nuevo de quien lo pide, con precios de hoy. */
 function config_copy(string $code, ?array $viewer): array
 {
     $src = config_find($code, $viewer);
     if (!node_branch_active((int) $src['node_id'])) throw new UcError(t('El modelo de esta configuración ya no está disponible: no se puede duplicar.'));
+    guest_create_limit($viewer);
     $new = tx(function () use ($src, $viewer) {
         $newCode = config_code_new();
         $cid = insert('configurations', ['code' => $newCode, 'node_id' => $src['node_id'], 'user_id' => $viewer['kind'] === 'user' ? (int) $viewer['user']['id'] : null,
@@ -107,7 +148,8 @@ function config_copy(string $code, ?array $viewer): array
             $wid = insert('config_walls', ['configuration_id' => $cid, 'name' => $w['name'], 'direction' => $w['direction'],
                 'origin_x_mm' => $w['origin_x_mm'], 'origin_y_mm' => $w['origin_y_mm'], 'sort' => $w['sort']]);
             foreach (rows('SELECT * FROM config_items WHERE config_wall_id = ? ORDER BY sort, id', [$w['id']]) as $it) {
-                insert('config_items', ['config_wall_id' => $wid, 'module_type_id' => $it['module_type_id'], 'width_cm' => $it['width_cm'], 'sort' => $it['sort']]);
+                insert('config_items', ['config_wall_id' => $wid, 'module_type_id' => $it['module_type_id'], 'width_mm' => $it['width_mm'],
+                    'height_mm' => $it['height_mm'], 'depth_mm' => $it['depth_mm'], 'sort' => $it['sort']]);
             }
         }
         config_touch($cid);
@@ -145,8 +187,10 @@ function config_pricing(array $cfg): array
             $type = module_type_get((int) $it['module_type_id']);
             $count++;
             $it = ['id' => (int) $it['id'], 'module_type_id' => (int) $it['module_type_id'], 'type_name' => $type['name'] ?? '?', 'family' => $type['family'] ?? '',
-                'width_cm' => (int) $it['width_cm'], 'valid' => $it['price'] !== null, 'price' => $it['price'] === null ? null : (int) $it['price'],
-                'tier_from_cm' => $it['tier_from_cm'] === null ? null : (int) $it['tier_from_cm'], 'tier_to_cm' => $it['tier_to_cm'] === null ? null : (int) $it['tier_to_cm'],
+                'width_mm' => (int) $it['width_mm'], 'width_cm' => mm_to_cm((int) $it['width_mm']), 'height_mm' => $it['height_mm'], 'depth_mm' => $it['depth_mm'],
+                'valid' => $it['price'] !== null, 'price' => $it['price'] === null ? null : (int) $it['price'],
+                'tier_from_mm' => $it['tier_from_mm'] === null ? null : (int) $it['tier_from_mm'], 'tier_to_mm' => $it['tier_to_mm'] === null ? null : (int) $it['tier_to_mm'],
+                'tier_from_cm' => mm_to_cm($it['tier_from_mm'] === null ? null : (int) $it['tier_from_mm']), 'tier_to_cm' => mm_to_cm($it['tier_to_mm'] === null ? null : (int) $it['tier_to_mm']),
                 'tier_node_id' => null, 'tiers' => []];
         }
     }
@@ -167,19 +211,27 @@ function config_view(array $cfg): array
         $items = [];
         foreach ($w['items'] as $it) {
             $type = module_type_get($it['module_type_id']);
+            $h = isset($it['height_mm']) && $it['height_mm'] !== null ? (int) $it['height_mm'] : (isset($type['height_mm']) ? (int) $type['height_mm'] : null);
+            $d = isset($it['depth_mm']) && $it['depth_mm'] !== null ? (int) $it['depth_mm'] : (isset($type['depth_mm']) ? (int) $type['depth_mm'] : null);
+            $parts = $p['frozen'] ? config_frozen_parts((int) $it['id'])
+                : piezas_de_linea(['module_type_id' => $it['module_type_id'], 'width_mm' => $it['width_mm'], 'height_mm' => $h, 'depth_mm' => $d]);
             $items[] = [
                 'id' => (int) $it['id'], 'module_type_id' => $it['module_type_id'], 'type_name' => $it['type_name'], 'ref' => $type['ref'] ?? '',
-                'family' => $it['family'], 'depth_mm' => isset($type['depth_mm']) ? (int) $type['depth_mm'] : null, 'width_cm' => $it['width_cm'],
+                'family' => $it['family'], 'width_mm' => (int) $it['width_mm'], 'height_mm' => $h, 'depth_mm' => $d,
+                'width_cm' => $it['width_cm'], 'width_text' => cm_text((int) $it['width_mm']),
                 'valid' => $it['valid'], 'tier_from_cm' => $it['tier_from_cm'], 'tier_to_cm' => $it['tier_to_cm'],
+                'tier_from_mm' => $it['tier_from_mm'], 'tier_to_mm' => $it['tier_to_mm'],
+                'tier_text' => $it['valid'] ? cm_text($it['tier_from_mm']) . '–' . cm_text($it['tier_to_mm']) . ' cm' : null,
                 'price' => eur($it['price']), 'price_cents' => $it['price'], 'price_text' => money($it['price']),
                 'tiers' => tiers_public($it['tiers']), 'error' => $it['error'] ?? null,
+                'parts' => $parts, 'parts_ok' => !array_filter($parts, fn($x) => $x['error'] !== null),
             ];
         }
         $walls[] = ['id' => (int) $w['id'], 'name' => $w['name'], 'direction' => $w['direction'],
             'origin_x_mm' => (int) $w['origin_x_mm'], 'origin_y_mm' => (int) $w['origin_y_mm'], 'items' => $items];
     }
     return [
-        'code' => $cfg['code'], 'status' => $cfg['status'], 'status_label' => t(CONFIG_STATUSES[$cfg['status']]), 'frozen' => $p['frozen'],
+        'code' => $cfg['code'], 'status' => $cfg['status'], 'status_label' => t(CONFIG_STATUSES[$cfg['status']]), 'frozen' => $p['frozen'], 'units' => ['width_cm' => 'cm', '*_mm' => 'mm', 'price' => 'EUR sin IVA'],
         'node' => ['id' => (int) $cfg['node_id'], 'path' => node_path((int) $cfg['node_id']), 'path_text' => node_path_text((int) $cfg['node_id'])],
         'user' => $owner ? ['id' => (int) $owner['id'], 'name' => $owner['name'], 'email' => $owner['email'], 'role' => $owner['role']] : null,
         'customer' => ['name' => $cfg['customer_name'], 'email' => $cfg['customer_email'], 'phone' => $cfg['customer_phone']],
@@ -194,6 +246,14 @@ function config_view(array $cfg): array
 function config_get(string $code, ?array $viewer): array
 {
     return config_view(config_find($code, $viewer));
+}
+
+/** Despiece congelado de una línea (aceptada o anulada). */
+function config_frozen_parts(int $itemId): array
+{
+    return array_map(fn($r) => ['name' => $r['name'], 'qty' => (int) $r['qty'], 'thickness_mm' => (float) $r['thickness_mm'], 'length_mm' => (float) $r['length_mm'],
+        'width_mm' => (float) $r['width_mm'], 'grain' => $r['grain'], 'edge_banding' => $r['edge_banding'], 'error' => null],
+        rows('SELECT * FROM config_item_parts WHERE config_item_id = ? ORDER BY sort, id', [$itemId]));
 }
 
 /** Guarda en la fila el total actual de un borrador (para listados y orden). La verdad sigue siendo el cálculo. */
@@ -280,11 +340,14 @@ function config_item(array $cfg, mixed $itemId): array
 }
 
 /** Comprueba que el ancho tenga tramo; si no, UcError con los tramos posibles en data['tiers']. */
-function config_check_width(array $cfg, int $typeId, int $width, ?int $itemId = null): void
+/** Comprueba que el ancho (mm) esté dentro del mínimo/máximo del tipo y tenga tramo; si no, UcError con los tramos posibles. */
+function config_check_width(array $cfg, int $typeId, int $widthMm, ?int $itemId = null): void
 {
     $type = module_type_get($typeId);
-    $hit = tier_lookup($typeId, (int) $cfg['node_id'], $width);
-    if (!$hit['tier']) throw new UcError(tiers_error_text($type['name'] ?? (string) $typeId, $width, $hit['tiers']), ['tiers' => tiers_public($hit['tiers']), 'item_id' => $itemId, 'width_cm' => $width]);
+    $hit = tier_lookup($typeId, (int) $cfg['node_id'], $widthMm);
+    $data = ['tiers' => tiers_public($hit['tiers']), 'item_id' => $itemId, 'width_cm' => mm_to_cm($widthMm), 'width_mm' => $widthMm];
+    if ($type && ($e = width_range_error($type, $widthMm))) throw new UcError($e, $data + ['min_width_mm' => $type['min_width_mm'], 'max_width_mm' => $type['max_width_mm']]);
+    if (!$hit['tier']) throw new UcError(tiers_error_text($type['name'] ?? (string) $typeId, $widthMm, $hit['tiers']), $data);
 }
 
 function config_active_type(mixed $id): array
@@ -295,9 +358,27 @@ function config_active_type(mixed $id): array
     return $t;
 }
 
+/** Ancho de una operación: width_cm (cm, un decimal: 58,5) o width_mm (mm enteros). Null si no viene. */
+function op_width_mm(array $op): ?int
+{
+    if (isset($op['width_mm']) && $op['width_mm'] !== '' && $op['width_mm'] !== null) return parse_int($op['width_mm'], 'width_mm', 10, 100000);
+    if (isset($op['width_cm']) && $op['width_cm'] !== '' && $op['width_cm'] !== null) return parse_width_mm($op['width_cm'], 'width_cm');
+    return null;
+}
+
+/** Campos que admite cada operación (cualquier otro es un error). */
+const CONFIG_OP_FIELDS = [
+    'set_width' => ['op', 'item_id', 'width_cm', 'width_mm'],
+    'remove' => ['op', 'item_id'],
+    'add' => ['op', 'wall_id', 'module_type_id', 'width_cm', 'width_mm'],
+    'replace' => ['op', 'item_id', 'module_type_id', 'width_cm', 'width_mm'],
+    'customer' => ['op', 'name', 'email', 'phone', 'notes'],
+];
+
 /**
- * Aplica operaciones a un borrador, todas o ninguna (transacción).
- *   set_width {item_id, width_cm} · remove {item_id} · add {wall_id, module_type_id, width_cm?} ·
+ * Aplica operaciones a un borrador, todas o ninguna, en una transacción de escritura (BEGIN IMMEDIATE) que vuelve a
+ * leer la configuración y exige que siga en borrador: nadie puede cambiar algo que se acaba de aceptar.
+ *   set_width {item_id, width_cm|width_mm} · remove {item_id} · add {wall_id, module_type_id, width_cm?} ·
  *   replace {item_id, module_type_id, width_cm?} · customer {name?, email?, phone?, notes?}
  * @return array{config:array, notes:list<string>}
  */
@@ -308,10 +389,12 @@ function config_apply_ops(string $code, array $ops, ?array $viewer): array
     if (!$ops || !array_is_list($ops)) throw new UcError(t('ops debe ser una lista de operaciones, p. ej. [{"op": "set_width", "item_id": 12, "width_cm": 60}].'));
     $notes = [];
     tx(function () use ($cfg, $ops, &$notes) {
+        $now = row('SELECT * FROM configurations WHERE id = ?', [$cfg['id']]);
+        config_require_draft($now ?? $cfg);
         foreach ($ops as $n => $op) {
             try {
                 if (!is_array($op)) throw new UcError(t('cada operación es un objeto con «op».'));
-                $notes = array_merge($notes, config_apply_one($cfg, $op));
+                $notes = array_merge($notes, config_apply_one($now, $op));
             } catch (UcError $ex) {
                 $name = is_array($op) ? (string) ($op['op'] ?? '?') : '?';
                 throw new UcError((count($ops) > 1 ? "ops[$n] ($name): " : '') . $ex->getMessage(), $ex->data + ['op_index' => $n], $ex->status);
@@ -327,12 +410,14 @@ function config_apply_ops(string $code, array $ops, ?array $viewer): array
 function config_apply_one(array $cfg, array $op): array
 {
     $kind = (string) ($op['op'] ?? '');
+    if (!isset(CONFIG_OP_FIELDS[$kind])) throw new UcError(t('Operación «{v}» desconocida. Valen: {ops}.', ['v' => $kind, 'ops' => implode(', ', CONFIG_OPS)]));
+    reject_unknown_keys($op, CONFIG_OP_FIELDS[$kind], $kind);
     switch ($kind) {
         case 'set_width':
             $it = config_item($cfg, $op['item_id'] ?? null);
-            $w = parse_int($op['width_cm'] ?? null, 'width_cm', 1, 10000);
+            $w = op_width_mm($op) ?? throw new UcError(t('set_width necesita width_cm (p. ej. 58,5).'));
             config_check_width($cfg, (int) $it['module_type_id'], $w, (int) $it['id']);
-            update('config_items', ['width_cm' => $w], 'id = ?', [$it['id']]);
+            update('config_items', ['width_mm' => $w], 'id = ?', [$it['id']]);
             return [];
         case 'remove':
             $it = config_item($cfg, $op['item_id'] ?? null);
@@ -344,46 +429,37 @@ function config_apply_one(array $cfg, array $op): array
                 throw new UcError(t('La pared {id} no es de la configuración {c}. Mira los id de las paredes (walls) con config_get.', ['id' => $wid, 'c' => $cfg['code']]), [], 404);
             }
             $type = config_active_type($op['module_type_id'] ?? null);
-            if (isset($op['width_cm']) && $op['width_cm'] !== '' && $op['width_cm'] !== null) {
-                $w = parse_int($op['width_cm'], 'width_cm', 1, 10000);
-                config_check_width($cfg, (int) $type['id'], $w);
-            } else {
-                $w = ancho_sugerido((int) $type['id'], (int) $cfg['node_id']) ?? throw new UcError(tiers_error_text($type['name'], 0, []));
-            }
+            $w = op_width_mm($op);
+            if ($w !== null) config_check_width($cfg, (int) $type['id'], $w);
+            else $w = ancho_sugerido((int) $type['id'], (int) $cfg['node_id']) ?? throw new UcError(tiers_error_text($type['name'], 0, []));
             $sort = (int) val('SELECT COALESCE(MAX(sort), 0) + 10 FROM config_items WHERE config_wall_id = ?', [$wid]);
-            insert('config_items', ['config_wall_id' => $wid, 'module_type_id' => (int) $type['id'], 'width_cm' => $w, 'sort' => $sort]);
+            insert('config_items', ['config_wall_id' => $wid, 'module_type_id' => (int) $type['id'], 'width_mm' => $w,
+                'height_mm' => (int) $type['height_mm'], 'depth_mm' => (int) $type['depth_mm'], 'sort' => $sort]);
             return [];
         case 'replace':
             $it = config_item($cfg, $op['item_id'] ?? null);
             $type = config_active_type($op['module_type_id'] ?? null);
             $notes = [];
-            if (isset($op['width_cm']) && $op['width_cm'] !== '' && $op['width_cm'] !== null) {
-                $w = parse_int($op['width_cm'], 'width_cm', 1, 10000);
+            $w = op_width_mm($op);
+            if ($w !== null) {
                 config_check_width($cfg, (int) $type['id'], $w, (int) $it['id']);
             } else {
-                $w = (int) $it['width_cm'];
-                if (!tier_lookup((int) $type['id'], (int) $cfg['node_id'], $w)['tier']) {
+                $w = (int) $it['width_mm'];
+                if (width_range_error($type, $w) !== null || !tier_lookup((int) $type['id'], (int) $cfg['node_id'], $w)['tier']) {
                     $new = ancho_sugerido((int) $type['id'], (int) $cfg['node_id'], $w) ?? throw new UcError(tiers_error_text($type['name'], $w, []));
-                    $notes[] = t('«{tipo}» no admite {de} cm: la línea {id} pasa a {a} cm (el tramo más cercano).', ['tipo' => $type['name'], 'de' => $w, 'a' => $new, 'id' => $it['id']]);
+                    $notes[] = t('«{tipo}» no admite {de} cm: la línea {id} pasa a {a} cm (el tramo más cercano).', ['tipo' => $type['name'], 'de' => cm_text($w), 'a' => cm_text($new), 'id' => $it['id']]);
                     $w = $new;
                 }
             }
-            update('config_items', ['module_type_id' => (int) $type['id'], 'width_cm' => $w], 'id = ?', [$it['id']]);
+            update('config_items', ['module_type_id' => (int) $type['id'], 'width_mm' => $w, 'height_mm' => (int) $type['height_mm'], 'depth_mm' => (int) $type['depth_mm']], 'id = ?', [$it['id']]);
             return $notes;
         case 'customer':
-            $d = [];
-            foreach (['name' => 'customer_name', 'email' => 'customer_email', 'phone' => 'customer_phone', 'notes' => 'notes'] as $in => $col) {
-                if (!array_key_exists($in, $op)) continue;
-                $v = trim((string) $op[$in]);
-                if ($in === 'email' && $v !== '' && !filter_var($v, FILTER_VALIDATE_EMAIL)) throw new UcError(t('El correo «{v}» no es válido.', ['v' => $v]));
-                $d[$col] = mb_substr($v, 0, $in === 'notes' ? 4000 : 160);
-            }
+            $d = config_customer_input(array_diff_key($op, ['op' => 1]), true);
             if (!$d) throw new UcError(t('customer necesita al menos uno de: name, email, phone, notes.'));
             update('configurations', $d, 'id = ?', [$cfg['id']]);
             return [];
-        default:
-            throw new UcError(t('Operación «{v}» desconocida. Valen: {ops}.', ['v' => $kind, 'ops' => implode(', ', CONFIG_OPS)]));
     }
+    return [];
 }
 
 // ---------------------------------------------------------------- aceptar
@@ -405,6 +481,7 @@ function config_accept(string $code, ?array $viewer, array $customer = [], bool 
         if (!$consent) throw new UcError(t('Para aceptar marca la casilla de protección de datos.'));
     }
     $p = tx(function () use ($cfg, $cust, $consent) {
+        config_require_draft(row('SELECT * FROM configurations WHERE id = ?', [$cfg['id']]) ?? $cfg); // se vuelve a mirar dentro de la transacción
         $p = precio_configuracion((int) $cfg['node_id'], config_walls_input((int) $cfg['id']));
         if ($p['count'] === 0) throw new UcError(t('La configuración no tiene ningún módulo: añade al menos uno antes de aceptar.'));
         if (!$p['valid']) {
@@ -412,6 +489,11 @@ function config_accept(string $code, ?array $viewer, array $customer = [], bool 
             foreach ($p['walls'] as $w) foreach ($w['items'] as $it) if (!$it['valid']) $bad[] = t('línea {id}: {e}', ['id' => $it['id'], 'e' => $it['error']]);
             throw new UcError(t('No se puede aceptar: hay medidas sin tramo. {lista}', ['lista' => implode(' · ', $bad)]));
         }
+        $badParts = [];
+        foreach ($p['walls'] as $w) foreach ($w['items'] as $it) {
+            foreach (piezas_de_linea($it) as $pp) if ($pp['error'] !== null) $badParts[] = t('línea {id}: {e}', ['id' => $it['id'], 'e' => $pp['error']]);
+        }
+        if ($badParts) throw new UcError(t('No se puede aceptar: hay piezas que no se pueden fabricar con esas medidas. {lista}', ['lista' => implode(' · ', $badParts)]));
         config_freeze((int) $cfg['id'], $p, 'accepted', ['accepted_at' => now(), 'consent_at' => $consent ? now() : null,
             'customer_name' => mb_substr($cust['customer_name'], 0, 160), 'customer_email' => mb_substr($cust['customer_email'], 0, 160), 'customer_phone' => mb_substr($cust['customer_phone'], 0, 160)]);
         return $p;
@@ -427,7 +509,14 @@ function config_accept(string $code, ?array $viewer, array $customer = [], bool 
 function config_freeze(int $configId, array $p, string $status, array $extra = []): void
 {
     foreach ($p['walls'] as $w) foreach ($w['items'] as $it) {
-        update('config_items', ['tier_from_cm' => $it['tier_from_cm'], 'tier_to_cm' => $it['tier_to_cm'], 'price' => $it['price']], 'id = ?', [$it['id']]);
+        update('config_items', ['tier_from_mm' => $it['tier_from_mm'], 'tier_to_mm' => $it['tier_to_mm'], 'price' => $it['price']], 'id = ?', [$it['id']]);
+        // Despiece congelado (como el precio): un cambio posterior de fórmulas no cambia lo aceptado.
+        q('DELETE FROM config_item_parts WHERE config_item_id = ?', [$it['id']]);
+        foreach (piezas_de_linea($it) as $i => $pp) {
+            if ($pp['error'] !== null) continue;
+            insert('config_item_parts', ['config_item_id' => $it['id'], 'name' => $pp['name'], 'qty' => $pp['qty'], 'thickness_mm' => $pp['thickness_mm'],
+                'length_mm' => $pp['length_mm'], 'width_mm' => $pp['width_mm'], 'grain' => $pp['grain'], 'edge_banding' => $pp['edge_banding'], 'sort' => $i]);
+        }
     }
     $data = ['status' => $status, 'total' => $p['total'], 'tax_rate' => $p['tax_rate'], 'updated_at' => now()] + $extra;
     $set = implode(', ', array_map(fn($k) => "$k = ?", array_keys($data)));
@@ -442,6 +531,8 @@ function config_cancel(string $code, ?array $viewer): array
     if (($viewer['user']['role'] ?? '') !== 'admin') throw new UcError(t('Solo un administrador puede anular configuraciones.'), [], 403);
     if ($cfg['status'] === 'cancelled') return config_get($code, $viewer);
     tx(function () use ($cfg) {
+        $cfg = row('SELECT * FROM configurations WHERE id = ?', [$cfg['id']]) ?? $cfg;
+        if ($cfg['status'] === 'cancelled') return;
         if ($cfg['status'] === 'draft') {
             // Un borrador anulado guarda la foto de cómo estaba (las medidas sin tramo quedan sin precio).
             config_freeze((int) $cfg['id'], precio_configuracion((int) $cfg['node_id'], config_walls_input((int) $cfg['id'])), 'cancelled');
@@ -457,33 +548,66 @@ function config_cancel(string $code, ?array $viewer): array
 
 function config_export_json(array $view): string
 {
-    return json_enc(['generated_at' => date('c'), 'app' => 'Universal Configurator ' . UC_VERSION] + $view, true);
+    return json_enc(['generated_at' => date('c'), 'app' => 'Universal Configurator ' . UC_VERSION] + $view + ['cut_list' => cut_list($view)], true);
 }
 
-/** Celda CSV segura: comillas y fórmulas neutralizadas (= + - @ al principio). */
+/**
+ * Celda CSV segura. Se entrecomilla si lleva ; , " CR o LF. Una fórmula (= + - @ tabulador CR al principio) se
+ * neutraliza con «'» al principio de CADA trozo separado por coma o punto y coma (Excel puede partir por cualquiera
+ * de los dos). Los números tal cual (-12,5).
+ */
 function csv_cell(mixed $v): string
 {
     $s = (string) $v;
-    if ($s !== '' && in_array($s[0], ['=', '+', '-', '@', "\t", "\r"], true) && !preg_match('/^-?\d+([.,]\d+)?$/', $s)) $s = "'" . $s;
-    return preg_match('/[;"\r\n]/', $s) ? '"' . str_replace('"', '""', $s) . '"' : $s;
+    if (!preg_match('/^-?\d+([.,]\d+)?$/', $s)) {
+        $s = (string) preg_replace_callback('/(^|[,;])(\s*)([=+\-@\t\r])/', fn($m) => $m[1] . $m[2] . "'" . $m[3], $s);
+    }
+    return preg_match('/[;,"\r\n]/', $s) ? '"' . str_replace('"', '""', $s) . '"' : $s;
 }
 
-/** CSV (separador «;», decimales con coma, UTF-8 con BOM para Excel): una fila por módulo. */
+function csv_join(array $rows): string
+{
+    return "\u{FEFF}" . implode("\r\n", array_map(fn($r) => implode(';', array_map('csv_cell', $r)), $rows)) . "\r\n";
+}
+
+/** CSV (separador «;», decimales con coma, UTF-8 con BOM para Excel): una fila por módulo, con sus medidas en mm. */
 function config_export_csv(array $views): string
 {
     $num = fn(?int $cents) => $cents === null ? '' : number_format($cents / 100, 2, ',', '');
-    $head = ['codigo', 'estado', 'creada', 'aceptada', 'nodo', 'cliente', 'correo', 'telefono', 'pared', 'direccion', 'origen_x_mm', 'origen_y_mm',
-        'linea', 'modulo', 'ref', 'familia', 'fondo_mm', 'ancho_cm', 'tramo_desde_cm', 'tramo_hasta_cm', 'precio_eur', 'total_sin_iva_eur', 'iva_pct', 'iva_eur'];
-    $out = [implode(';', $head)];
+    $rows = [['codigo', 'estado', 'creada', 'aceptada', 'nodo', 'cliente', 'correo', 'telefono', 'pared', 'direccion', 'origen_x_mm', 'origen_y_mm',
+        'linea', 'modulo', 'ref', 'familia', 'ancho_cm', 'ancho_mm', 'alto_mm', 'fondo_mm', 'tramo_desde_cm', 'tramo_hasta_cm', 'precio_eur', 'total_sin_iva_eur', 'iva_pct', 'iva_eur']];
     foreach ($views as $v) {
         foreach ($v['walls'] as $w) {
             foreach ($w['items'] as $it) {
-                $out[] = implode(';', array_map('csv_cell', [$v['code'], $v['status'], $v['created_at'], $v['accepted_at'] ?? '', $v['node']['path_text'],
+                $rows[] = [$v['code'], $v['status'], $v['created_at'], $v['accepted_at'] ?? '', $v['node']['path_text'],
                     $v['customer']['name'], $v['customer']['email'], $v['customer']['phone'], $w['name'], $w['direction'], $w['origin_x_mm'], $w['origin_y_mm'],
-                    $it['id'], $it['type_name'], $it['ref'], $it['family'], $it['depth_mm'], $it['width_cm'], $it['tier_from_cm'], $it['tier_to_cm'],
-                    $num($it['price_cents']), $num($v['total_cents']), str_replace('.', ',', (string) $v['tax_rate']), $num($v['tax_cents'])]));
+                    $it['id'], $it['type_name'], $it['ref'], $it['family'], $it['width_text'], $it['width_mm'], $it['height_mm'], $it['depth_mm'],
+                    $it['tier_from_mm'] === null ? '' : cm_text($it['tier_from_mm']), $it['tier_to_mm'] === null ? '' : cm_text($it['tier_to_mm']),
+                    $num($it['price_cents']), $num($v['total_cents']), str_replace('.', ',', (string) $v['tax_rate']), $num($v['tax_cents'])];
             }
         }
     }
-    return "\u{FEFF}" . implode("\r\n", $out) . "\r\n";
+    return csv_join($rows);
+}
+
+/** CSV del despiece: una fila por pieza de cada línea (medidas en mm, decimales con coma). */
+function config_export_parts_csv(array $view): string
+{
+    $rows = [['codigo', 'pared', 'linea', 'modulo', 'ancho_modulo_cm', 'pieza', 'cantidad', 'espesor_mm', 'largo_mm', 'ancho_mm', 'veta', 'canto', 'error']];
+    foreach ($view['walls'] as $w) foreach ($w['items'] as $it) foreach ($it['parts'] as $p) {
+        $rows[] = [$view['code'], $w['name'], $it['id'], $it['type_name'], $it['width_text'], $p['name'], $p['qty'], mm_text($p['thickness_mm']),
+            mm_text($p['length_mm']), mm_text($p['width_mm']), $p['grain'], $p['edge_banding'], $p['error'] ?? ''];
+    }
+    return csv_join($rows);
+}
+
+/** CSV de la lista de corte agregada. */
+function config_export_cut_csv(array $view): string
+{
+    $rows = [['codigo', 'pieza', 'cantidad', 'espesor_mm', 'largo_mm', 'ancho_mm', 'veta', 'canto', 'origen']];
+    foreach (cut_list($view) as $r) {
+        $rows[] = [$view['code'], $r['name'], $r['qty'], mm_text($r['thickness_mm']), mm_text($r['length_mm']), mm_text($r['width_mm']), $r['grain'], $r['edge_banding'],
+            implode(' | ', array_map(fn($f) => "{$f['module']} {$f['width_cm']} cm (línea {$f['item_id']}, {$f['wall']}) ×{$f['qty']}", $r['from']))];
+    }
+    return csv_join($rows);
 }

@@ -6,7 +6,7 @@ declare(strict_types=1);
 //   php tests/run.php            · php tests/run.php -v   (muestra cada línea)
 
 $verbose = in_array('-v', $argv, true);
-$files = array_filter(glob(__DIR__ . '/*.php'), fn($f) => !in_array(basename($f), ['run.php', '_helper.php'], true));
+$files = array_filter(glob(__DIR__ . '/*.php'), fn($f) => basename($f) !== 'run.php' && !str_starts_with(basename($f), '_'));
 sort($files);
 $failed = [];
 $totalTests = 0;

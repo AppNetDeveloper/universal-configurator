@@ -51,7 +51,7 @@ check('set_width sin tramo se rechaza con los tramos y NO cambia nada (atómico)
     }
     throw new RuntimeException('no dio error');
 });
-check_error('set_width con decimales se rechaza', fn() => config_apply_ops($code, [['op' => 'set_width', 'item_id' => $it[0]['id'], 'width_cm' => '45.5']], $va), 'entero');
+check_error('set_width con dos decimales se rechaza (uno sí vale)', fn() => config_apply_ops($code, [['op' => 'set_width', 'item_id' => $it[0]['id'], 'width_cm' => '45.55']], $va), 'decimal');
 check('add con ancho', function () use ($code, $cfg, $c, $va) {
     $r = config_apply_ops($code, [['op' => 'add', 'wall_id' => $cfg['walls'][0]['id'], 'module_type_id' => $c['alto'], 'width_cm' => 50]], $va)['config'];
     return eq(3, $r['count']) && eq(25000, $r['total_cents']);
@@ -120,7 +120,7 @@ check('aceptar congela tramo y precio de cada línea, el total y el IVA', functi
     $l = $acc['walls'][0]['items'][0];
     return eq('accepted', $acc['status']) && eq(true, $acc['frozen']) && eq($before['total_cents'], $acc['total_cents'])
         && eq(21.0, $acc['tax_rate']) && eq($before['walls'][0]['items'][0]['price_cents'], $l['price_cents'])
-        && eq($l['tier_from_cm'], (int) val('SELECT tier_from_cm FROM config_items WHERE id = ?', [$l['id']]));
+        && eq($l['tier_from_cm'], (int) (int) val('SELECT tier_from_mm FROM config_items WHERE id = ?', [$l['id']]) / 10);
 });
 check('el precio congelado NO cambia al cambiar la tabla ni el IVA', function () use ($code, $c, $acc, $va, $vadmin) {
     q('UPDATE price_tiers SET price = price * 3 WHERE module_type_id = ?', [$c['bajo']]);
@@ -143,7 +143,7 @@ check('duplicar una aceptada da un borrador nuevo con precios de hoy', function 
     return eq('draft', $d['status']) && eq(true, $d['code'] !== $code) && eq($acc['count'], $d['count']) && eq(true, $d['total_cents'] > $acc['total_cents']);
 });
 check_error('no se acepta con una medida sin tramo', function () use ($other, $va) {
-    q('UPDATE config_items SET width_cm = 99 WHERE id = ?', [$other['walls'][0]['items'][0]['id']]);
+    q('UPDATE config_items SET width_mm = 990 WHERE id = ?', [$other['walls'][0]['items'][0]['id']]);
     config_accept($other['code'], $va);
 }, '99');
 check_error('no se acepta una configuración vacía', function () use ($c, $va) {

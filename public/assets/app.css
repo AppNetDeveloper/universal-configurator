@@ -89,6 +89,16 @@ legend { font-size: .9rem; font-weight: 600; color: var(--text-2); margin-bottom
 .checks-inline label.check + label.check { margin-top: 10px; }
 .w-num { width: 96px; display: inline-block; }
 .w-money { width: 120px; display: inline-block; }
+.w-xs { width: 70px; display: inline-block; } .w-xs2 { width: 84px; display: inline-block; }
+.w-expr { width: 150px; display: inline-block; } .w-expr-s { width: 70px; display: inline-block; }
+input.is-bad { border-color: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+.table-scroll { overflow-x: auto; margin: 0 calc(-1 * clamp(16px, 2.4vw, 24px)); padding: 0 clamp(16px, 2.4vw, 24px); }
+.parts-edit td, .parts-edit th { padding: 8px 6px; }
+.parts-edit tr.new-row td { background: var(--sunken); }
+.table.mini th, .table.mini td { padding: 6px 10px; font-size: .86rem; }
+tr.parts-row > td { padding-top: 0; background: var(--surface); }
+details summary { cursor: pointer; color: var(--accent); font-size: .88rem; font-weight: 600; padding: 4px 0 8px; min-height: 32px; }
+.mod-dims { margin: 0; font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .row-form { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
 .row-form label { flex: 1 1 140px; }
 .row-form.tight label { flex: 0 1 auto; }

@@ -23,8 +23,8 @@ $draft = $cfg['status'] === 'draft';
           <?php foreach ($w['items'] as $it): ?>
             <tr class="<?= $it['valid'] ? '' : 'is-invalid' ?>">
               <td><span class="fam"><?= e($it['family']) ?></span> <?= e($it['type_name']) ?><?php if (!$it['valid']): ?><span class="line-error"><?= e($it['error']) ?></span><?php endif; ?></td>
-              <td class="r num"><?= (int) $it['width_cm'] ?> cm</td>
-              <td class="r num hide-sm"><?= $it['valid'] ? (int) $it['tier_from_cm'] . '–' . (int) $it['tier_to_cm'] . ' cm' : '—' ?></td>
+              <td class="r num"><?= e($it['width_text']) ?> cm</td>
+              <td class="r num hide-sm"><?= e($it['tier_text'] ?? '—') ?></td>
               <td class="r num"><?= e(money($it['price_cents'])) ?></td>
             </tr>
           <?php endforeach; ?>

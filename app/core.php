@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 
 const UC_VERSION = '0.1.0';
-const UC_SCHEMA = 2;
+const UC_SCHEMA = 3;
 const UC_AUTHOR_URL = 'https://www.bionicadri.com';
 
 /** Crédito de autoría (lo exige la Licencia BionicAdri: no se debe eliminar). */
@@ -102,20 +102,39 @@ function update(string $table, array $data, string $where, array $params = []): 
     q("UPDATE $table SET $set WHERE $where", [...array_values($data), ...$params]);
 }
 
-/** Ejecuta $fn dentro de una transacción (anidable: si ya hay una abierta, solo la usa). */
+/**
+ * Ejecuta $fn dentro de una transacción de ESCRITURA (BEGIN IMMEDIATE: toma el cerrojo de escritura al empezar, así
+ * dos peticiones a la vez no leen el mismo estado y luego chocan al escribir). Anidable: si ya hay una abierta, solo
+ * la usa. Si la base está ocupada más allá de busy_timeout, responde 503 «inténtalo de nuevo» en vez de un 500.
+ */
 function tx(callable $fn): mixed
 {
+    static $depth = 0;
+    if ($depth > 0) return $fn();
     $pdo = db();
-    if ($pdo->inTransaction()) return $fn();
-    $pdo->beginTransaction();
     try {
-        $r = $fn();
-        $pdo->commit();
-        return $r;
-    } catch (Throwable $ex) {
-        $pdo->rollBack();
+        $pdo->exec('BEGIN IMMEDIATE');
+    } catch (PDOException $ex) {
+        if (db_busy($ex)) throw new UcError(t('La base de datos está ocupada en este momento: inténtalo de nuevo en unos segundos.'), [], 503);
         throw $ex;
     }
+    $depth++;
+    try {
+        $r = $fn();
+        $pdo->exec('COMMIT');
+        return $r;
+    } catch (Throwable $ex) {
+        try { $pdo->exec('ROLLBACK'); } catch (Throwable) {}
+        if ($ex instanceof PDOException && db_busy($ex)) throw new UcError(t('La base de datos está ocupada en este momento: inténtalo de nuevo en unos segundos.'), [], 503);
+        throw $ex;
+    } finally {
+        $depth--;
+    }
+}
+
+function db_busy(PDOException $ex): bool
+{
+    return str_contains($ex->getMessage(), 'database is locked') || str_contains($ex->getMessage(), 'database is busy') || ($ex->errorInfo[1] ?? 0) === 5;
 }
 
 /**
@@ -143,21 +162,21 @@ function migrate(): void
     CREATE INDEX IF NOT EXISTS nodes_parent ON nodes (parent_id, sort);
     CREATE TABLE IF NOT EXISTS module_types (
         id INTEGER PRIMARY KEY, name TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
-        family TEXT NOT NULL DEFAULT '', depth_mm INTEGER NOT NULL DEFAULT 600, active INTEGER NOT NULL DEFAULT 1,
-        sort INTEGER NOT NULL DEFAULT 0);
+        family TEXT NOT NULL DEFAULT '', depth_mm INTEGER NOT NULL DEFAULT 560, active INTEGER NOT NULL DEFAULT 1,
+        sort INTEGER NOT NULL DEFAULT 0, width_mm INTEGER NOT NULL DEFAULT 600, height_mm INTEGER NOT NULL DEFAULT 720,
+        min_width_mm INTEGER NULL, max_width_mm INTEGER NULL, board_mm REAL NOT NULL DEFAULT 19, back_mm REAL NOT NULL DEFAULT 8);
     CREATE TABLE IF NOT EXISTS price_tiers (
         id INTEGER PRIMARY KEY, module_type_id INTEGER NOT NULL REFERENCES module_types(id) ON DELETE CASCADE,
         node_id INTEGER NULL REFERENCES nodes(id) ON DELETE CASCADE,
-        from_cm INTEGER NOT NULL, to_cm INTEGER NOT NULL, price INTEGER NOT NULL CHECK (price >= 0),
-        CHECK (from_cm <= to_cm), CHECK (from_cm > 0));
-    CREATE INDEX IF NOT EXISTS price_tiers_type ON price_tiers (module_type_id, node_id, from_cm);
+        from_mm INTEGER NOT NULL, to_mm INTEGER NOT NULL, price INTEGER NOT NULL CHECK (price >= 0),
+        CHECK (from_mm <= to_mm), CHECK (from_mm > 0));
     CREATE TABLE IF NOT EXISTS layout_walls (
         id INTEGER PRIMARY KEY, node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, name TEXT NOT NULL,
         direction TEXT NOT NULL DEFAULT 'x' CHECK (direction IN ('x','y')),
         origin_x_mm INTEGER NOT NULL DEFAULT 0, origin_y_mm INTEGER NOT NULL DEFAULT 0, sort INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS default_modules (
         id INTEGER PRIMARY KEY, layout_wall_id INTEGER NOT NULL REFERENCES layout_walls(id) ON DELETE CASCADE,
-        module_type_id INTEGER NOT NULL REFERENCES module_types(id), width_cm INTEGER NOT NULL, sort INTEGER NOT NULL DEFAULT 0);
+        module_type_id INTEGER NOT NULL REFERENCES module_types(id), width_mm INTEGER NOT NULL, sort INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS configurations (
         id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL, node_id INTEGER NOT NULL REFERENCES nodes(id),
         user_id INTEGER NULL REFERENCES users(id),
@@ -172,8 +191,8 @@ function migrate(): void
         origin_x_mm INTEGER NOT NULL DEFAULT 0, origin_y_mm INTEGER NOT NULL DEFAULT 0, sort INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS config_items (
         id INTEGER PRIMARY KEY, config_wall_id INTEGER NOT NULL REFERENCES config_walls(id) ON DELETE CASCADE,
-        module_type_id INTEGER NOT NULL REFERENCES module_types(id), width_cm INTEGER NOT NULL, sort INTEGER NOT NULL DEFAULT 0,
-        tier_from_cm INTEGER NULL, tier_to_cm INTEGER NULL, price INTEGER NULL);
+        module_type_id INTEGER NOT NULL REFERENCES module_types(id), width_mm INTEGER NOT NULL, height_mm INTEGER NULL, depth_mm INTEGER NULL,
+        sort INTEGER NOT NULL DEFAULT 0, tier_from_mm INTEGER NULL, tier_to_mm INTEGER NULL, price INTEGER NULL);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS mcp_tokens (
         id INTEGER PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, prefix TEXT NOT NULL DEFAULT '',
@@ -183,6 +202,22 @@ function migrate(): void
         id INTEGER PRIMARY KEY, at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS throttle (key TEXT PRIMARY KEY, hits INTEGER NOT NULL, reset_at INTEGER NOT NULL);
     SQL);
+    // v3: medidas en mm (un decimal en cm = mm enteros), medidas del tipo y despiece.
+    migrate_v3();
+    db()->exec(<<<SQL
+    CREATE INDEX IF NOT EXISTS price_tiers_type ON price_tiers (module_type_id, node_id, from_mm);
+    CREATE TABLE IF NOT EXISTS module_parts (
+        id INTEGER PRIMARY KEY, module_type_id INTEGER NOT NULL REFERENCES module_types(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 1 CHECK (qty > 0), thickness_expr TEXT NOT NULL DEFAULT 'T',
+        length_expr TEXT NOT NULL, width_expr TEXT NOT NULL, grain TEXT NOT NULL DEFAULT '', edge_banding TEXT NOT NULL DEFAULT '',
+        sort INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS module_parts_type ON module_parts (module_type_id, sort);
+    CREATE TABLE IF NOT EXISTS config_item_parts (
+        id INTEGER PRIMARY KEY, config_item_id INTEGER NOT NULL REFERENCES config_items(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, qty INTEGER NOT NULL, thickness_mm REAL NOT NULL, length_mm REAL NOT NULL, width_mm REAL NOT NULL,
+        grain TEXT NOT NULL DEFAULT '', edge_banding TEXT NOT NULL DEFAULT '', sort INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS config_item_parts_item ON config_item_parts (config_item_id, sort);
+    SQL);
     // v2: url_publica obligatoria. Una instalación anterior sin ella no puede deducirla con seguridad (la cabecera Host
     // no es de fiar): queda el aviso en el registro y en el panel, y no se envían enlaces hasta que el admin la ponga.
     if ((int) val("SELECT value FROM meta WHERE key = 'schema_version'") < 2 && trim((string) val("SELECT value FROM settings WHERE key = 'url_publica'")) === ''
@@ -190,6 +225,42 @@ function migrate(): void
         insert('audit_log', ['at' => now(), 'actor' => 'sistema', 'action' => 'settings.no_public_url', 'detail' => 'Falta la URL pública: configúrala en Ajustes; mientras, no se envían enlaces por correo.']);
     }
     q("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", [(string) UC_SCHEMA]);
+}
+
+/**
+ * Paso de v2 a v3 en una base existente (anchos en cm enteros): renombra las columnas *_cm a *_mm multiplicando por
+ * 10, añade alto y fondo a cada línea (los de su tipo) y las medidas del tipo (ancho, alto, mínimo y máximo desde sus
+ * tramos, tablero 19 y trasera 8). Todo o nada. En una base nueva no hace nada.
+ */
+function migrate_v3(): void
+{
+    $cols = fn(string $t) => array_column(rows("PRAGMA table_info($t)"), 'name');
+    if (!in_array('from_cm', $cols('price_tiers'), true)) return;
+    tx(function () use ($cols) {
+        $pdo = db();
+        $pdo->exec('DROP INDEX IF EXISTS price_tiers_type');
+        foreach (['price_tiers' => ['from_cm' => 'from_mm', 'to_cm' => 'to_mm'], 'default_modules' => ['width_cm' => 'width_mm'],
+                  'config_items' => ['width_cm' => 'width_mm', 'tier_from_cm' => 'tier_from_mm', 'tier_to_cm' => 'tier_to_mm']] as $table => $map) {
+            // Primero se renombran todas (el CHECK desde ≤ hasta se renombra con ellas) y luego se multiplican a la vez.
+            foreach ($map as $from => $to) $pdo->exec("ALTER TABLE $table RENAME COLUMN $from TO $to");
+            $pdo->exec("UPDATE $table SET " . implode(', ', array_map(fn($c) => "$c = $c * 10", $map)));
+        }
+        $mt = $cols('module_types');
+        foreach (['width_mm' => 'INTEGER NOT NULL DEFAULT 600', 'height_mm' => 'INTEGER NOT NULL DEFAULT 720', 'min_width_mm' => 'INTEGER NULL',
+                  'max_width_mm' => 'INTEGER NULL', 'board_mm' => 'REAL NOT NULL DEFAULT 19', 'back_mm' => 'REAL NOT NULL DEFAULT 8'] as $c => $def) {
+            if (!in_array($c, $mt, true)) $pdo->exec("ALTER TABLE module_types ADD COLUMN $c $def");
+        }
+        $pdo->exec('UPDATE module_types SET min_width_mm = (SELECT MIN(from_mm) FROM price_tiers p WHERE p.module_type_id = module_types.id),
+            max_width_mm = (SELECT MAX(to_mm) FROM price_tiers p WHERE p.module_type_id = module_types.id)');
+        $pdo->exec('UPDATE module_types SET width_mm = COALESCE((SELECT to_mm FROM price_tiers p WHERE p.module_type_id = module_types.id AND p.node_id IS NULL
+            AND p.from_mm <= 600 AND p.to_mm >= 600 LIMIT 1), max_width_mm, 600)');
+        $ci = $cols('config_items');
+        if (!in_array('height_mm', $ci, true)) $pdo->exec('ALTER TABLE config_items ADD COLUMN height_mm INTEGER NULL');
+        if (!in_array('depth_mm', $ci, true)) $pdo->exec('ALTER TABLE config_items ADD COLUMN depth_mm INTEGER NULL');
+        $pdo->exec('UPDATE config_items SET height_mm = (SELECT height_mm FROM module_types t WHERE t.id = config_items.module_type_id),
+            depth_mm = (SELECT depth_mm FROM module_types t WHERE t.id = config_items.module_type_id) WHERE height_mm IS NULL');
+        insert('audit_log', ['at' => now(), 'actor' => 'sistema', 'action' => 'schema.v3', 'detail' => 'Medidas pasadas a mm; medidas de tipo y despiece añadidos']);
+    });
 }
 
 function ensure_schema(): void
@@ -270,6 +341,50 @@ function slugify(string $s): string
     ];
     $s = strtr(mb_strtolower(trim($s)), $map);
     return trim((string) preg_replace('/[^a-z0-9]+/', '-', $s), '-');
+}
+
+/**
+ * Ancho que escribe la persona en cm, con un decimal como mucho («58,5», «58.5», 58.5, 60) → mm enteros (585).
+ * Así se guardan todas las medidas: en mm enteros. Lanza UcError con el valor recibido.
+ */
+function parse_width_mm(mixed $v, string $field = 'width_cm', int $minCm = 1, int $maxCm = 10000): int
+{
+    if (is_int($v)) $s = (string) $v;
+    elseif (is_float($v) && is_finite($v)) $s = rtrim(rtrim(number_format($v, 4, '.', ''), '0'), '.');
+    elseif (is_string($v)) $s = str_replace(',', '.', trim($v));
+    else throw new UcError(t('{campo} debe ser una medida en cm (p. ej. 60 o 58,5); recibido: {v}', ['campo' => $field, 'v' => gettype($v)]));
+    if (preg_match('/^\d+\.\d{2,}$/', $s)) throw new UcError(t('{campo}: «{v}» tiene más de un decimal; las medidas van en cm con un decimal como mucho (58,5).', ['campo' => $field, 'v' => (string) $v]));
+    if (!preg_match('/^\d{1,6}(\.\d)?$/', $s)) throw new UcError(t('{campo}: «{v}» no es una medida en cm (p. ej. 60 o 58,5).', ['campo' => $field, 'v' => is_scalar($v) ? mb_substr((string) $v, 0, 20) : '']));
+    $mm = (int) round(((float) $s) * 10);
+    if ($mm < $minCm * 10 || $mm > $maxCm * 10) throw new UcError(t('{campo} fuera de rango: {v} cm (entre {min} y {max}).', ['campo' => $field, 'v' => $s, 'min' => $minCm, 'max' => $maxCm]));
+    return $mm;
+}
+
+/** mm → cm como número (60 o 58.5): entero si no tiene decimal. */
+function mm_to_cm(?int $mm): int|float|null
+{
+    if ($mm === null) return null;
+    return $mm % 10 === 0 ? intdiv($mm, 10) : $mm / 10;
+}
+
+/** mm → «58,5» o «60» (cm, para pantallas). */
+function cm_text(?int $mm): string
+{
+    if ($mm === null) return '—';
+    return $mm % 10 === 0 ? (string) intdiv($mm, 10) : str_replace('.', ',', (string) ($mm / 10));
+}
+
+/** Medida en mm de una pieza → «581» o «481,5». */
+function mm_text(?float $mm): string
+{
+    if ($mm === null) return '—';
+    return floor($mm) == $mm ? (string) (int) $mm : str_replace('.', ',', (string) $mm);
+}
+
+/** Redondeo de las piezas a 0,5 mm. */
+function round_half(float $mm): float
+{
+    return round($mm * 2) / 2;
 }
 
 /** Céntimos → «1.234,50 €». */

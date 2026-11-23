@@ -5,7 +5,7 @@
   <div>
     <p class="eyebrow"><?= e($cfg['node']['path_text']) ?> · <span class="mono"><?= e($cfg['code']) ?></span></p>
     <h1><?= te('Módulos') ?></h1>
-    <p class="hint"><?= te('Ajusta el ancho de cada módulo con − / + o escribiéndolo. Cada medida cae en un tramo con su precio: no se cobra por centímetro.') ?></p>
+    <p class="hint"><?= te('Ajusta el ancho de cada módulo con − / + o escribiéndolo (admite un decimal: 58,5). Cada medida cae en un tramo con su precio: no se cobra por centímetro.') ?></p>
   </div>
 </div>
 <div id="configurator" class="walls" aria-live="polite"><p class="muted"><?= te('Cargando…') ?></p></div>
@@ -13,7 +13,7 @@
 <script type="application/json" id="uc-data"><?= json_encode(['config' => $cfg, 'types' => $types, 'csrf' => csrf_token(), 'texts' => [
     'remove' => t('Quitar'), 'replace' => t('Sustituir por…'), 'add' => t('Añadir módulo'), 'width' => t('Ancho'), 'tier' => t('Tramo'), 'tiers' => t('Tramos'),
     'module' => t('módulo'), 'modules' => t('módulos'), 'saving' => t('Guardando…'), 'saved' => t('Guardado'), 'error' => t('No se pudo guardar'),
-    'empty' => t('Sin módulos en esta pared.'), 'confirmRemove' => t('¿Quitar este módulo?'), 'invalid' => t('Medida no válida'), 'chooseType' => t('Elige un módulo…'),
+    'empty' => t('Sin módulos en esta pared.'), 'dims' => t('{w} × {h} × {d} mm (ancho × alto × fondo)'), 'confirmRemove' => t('¿Quitar este módulo?'), 'invalid' => t('Medida no válida'), 'chooseType' => t('Elige un módulo…'),
 ]], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <div class="totalbar" role="region" aria-label="<?= te('Total') ?>">
   <div class="wrap wide totalbar-in">

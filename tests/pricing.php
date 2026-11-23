@@ -55,9 +55,9 @@ check_error('desde mayor que hasta se rechaza', fn() => tier_save($c['bajo'], nu
 check_error('desde 0 se rechaza', fn() => tier_save($c['alto'], null, 0, 20, 100));
 check('tramo contiguo 61–80 sí vale', fn() => tier_save($c['bajo'], null, 61, 80, 12500) > 0);
 check('editar un tramo no choca consigo mismo', function () use ($c) {
-    $id = (int) val('SELECT id FROM price_tiers WHERE module_type_id = ? AND node_id IS NULL AND from_cm = 61', [$c['bajo']]);
+    $id = (int) val('SELECT id FROM price_tiers WHERE module_type_id = ? AND node_id IS NULL AND from_mm = 610', [$c['bajo']]);
     tier_save($c['bajo'], null, 61, 85, 12500, $id);
-    return eq(85, (int) val('SELECT to_cm FROM price_tiers WHERE id = ?', [$id]));
+    return eq(850, (int) val('SELECT to_mm FROM price_tiers WHERE id = ?', [$id]));
 });
 check('el mismo rango en otro nodo no es solape', fn() => tier_save($c['bajo'], $c['duo'], 41, 60, 11000) > 0);
 check_error('solape dentro del grupo del nodo se rechaza', fn() => tier_save($c['bajo'], $c['duo'], 50, 55, 11000), 'solapa');

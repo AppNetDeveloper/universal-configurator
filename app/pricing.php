@@ -12,92 +12,126 @@ declare(strict_types=1);
  * precio_configuracion() la usan la tablet (vía /api), el panel y el MCP. Nunca se calcula en JavaScript.
  */
 
+/** Fila de price_tiers → tramo interno (mm enteros, céntimos) con sus cm para mostrar. */
+function tier_row(array $t): array
+{
+    $f = (int) $t['from_mm'];
+    $to = (int) $t['to_mm'];
+    return ['id' => (int) $t['id'], 'from_mm' => $f, 'to_mm' => $to, 'from_cm' => mm_to_cm($f), 'to_cm' => mm_to_cm($to), 'price' => (int) $t['price']];
+}
+
 /**
- * Tramos que valen para un tipo en un nodo.
- * @return array{node_id:?int, tiers:list<array{id:int,from_cm:int,to_cm:int,price:int}>}
+ * Tramos que valen para un tipo en un nodo (medidas en mm).
+ * @return array{node_id:?int, tiers:list<array{id:int,from_mm:int,to_mm:int,from_cm:int|float,to_cm:int|float,price:int}>}
  */
 function tiers_effective(int $typeId, int $nodeId): array
 {
-    $map = fn(array $rs) => array_map(fn($t) => ['id' => (int) $t['id'], 'from_cm' => (int) $t['from_cm'], 'to_cm' => (int) $t['to_cm'], 'price' => (int) $t['price']], $rs);
     foreach (node_lineage($nodeId) as $nid) {
-        $rs = rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id = ? ORDER BY from_cm', [$typeId, $nid]);
-        if ($rs) return ['node_id' => $nid, 'tiers' => $map($rs)];
+        $rs = rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id = ? ORDER BY from_mm', [$typeId, $nid]);
+        if ($rs) return ['node_id' => $nid, 'tiers' => array_map('tier_row', $rs)];
     }
-    return ['node_id' => null, 'tiers' => $map(rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id IS NULL ORDER BY from_cm', [$typeId]))];
+    return ['node_id' => null, 'tiers' => array_map('tier_row', rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id IS NULL ORDER BY from_mm', [$typeId]))];
 }
 
-/** @return array{tier:?array, tiers:list, node_id:?int} */
-function tier_lookup(int $typeId, int $nodeId, int $width): array
+/** @return array{tier:?array, tiers:list, node_id:?int} — $widthMm en mm */
+function tier_lookup(int $typeId, int $nodeId, int $widthMm): array
 {
     $eff = tiers_effective($typeId, $nodeId);
-    foreach ($eff['tiers'] as $t) if ($width >= $t['from_cm'] && $width <= $t['to_cm']) return ['tier' => $t, 'tiers' => $eff['tiers'], 'node_id' => $eff['node_id']];
+    foreach ($eff['tiers'] as $t) if ($widthMm >= $t['from_mm'] && $widthMm <= $t['to_mm']) return ['tier' => $t, 'tiers' => $eff['tiers'], 'node_id' => $eff['node_id']];
     return ['tier' => null, 'tiers' => $eff['tiers'], 'node_id' => $eff['node_id']];
 }
 
 function tiers_text(array $tiers): string
 {
-    return implode(', ', array_map(fn($t) => "{$t['from_cm']}–{$t['to_cm']} cm (" . money($t['price']) . ')', $tiers));
+    return implode(', ', array_map(fn($t) => cm_text($t['from_mm']) . '–' . cm_text($t['to_mm']) . ' cm (' . money($t['price']) . ')', $tiers));
 }
 
-function tiers_error_text(string $typeName, int $width, array $tiers): string
+function tiers_error_text(string $typeName, int $widthMm, array $tiers): string
 {
     return $tiers
-        ? t('{w} cm no es una medida válida para «{tipo}». Tramos posibles: {tramos}.', ['w' => $width, 'tipo' => $typeName, 'tramos' => tiers_text($tiers)])
+        ? t('{w} cm no es una medida válida para «{tipo}». Tramos posibles: {tramos}.', ['w' => cm_text($widthMm), 'tipo' => $typeName, 'tramos' => tiers_text($tiers)])
         : t('«{tipo}» no tiene tramos de precio para este modelo: no se puede usar todavía.', ['tipo' => $typeName]);
 }
 
-/** Tramos en formato público (API/MCP): euros con 2 decimales y céntimos. */
+/** Si el tipo tiene ancho mínimo/máximo y $widthMm queda fuera, el motivo; si no, null. */
+function width_range_error(array $type, int $widthMm): ?string
+{
+    $min = $type['min_width_mm'] !== null ? (int) $type['min_width_mm'] : null;
+    $max = $type['max_width_mm'] !== null ? (int) $type['max_width_mm'] : null;
+    if (($min !== null && $widthMm < $min) || ($max !== null && $widthMm > $max)) {
+        return t('{w} cm está fuera del ancho de «{tipo}»: entre {min} y {max} cm.', ['w' => cm_text($widthMm), 'tipo' => $type['name'],
+            'min' => $min !== null ? cm_text($min) : '—', 'max' => $max !== null ? cm_text($max) : '—']);
+    }
+    return null;
+}
+
+/** Tramos en formato público (API/MCP): cm y mm, euros con 2 decimales, céntimos y texto. */
 function tiers_public(array $tiers): array
 {
-    return array_map(fn($t) => ['from_cm' => $t['from_cm'], 'to_cm' => $t['to_cm'], 'price' => eur($t['price']), 'price_cents' => $t['price'], 'price_text' => money($t['price'])], $tiers);
+    return array_map(fn($t) => ['from_cm' => $t['from_cm'], 'to_cm' => $t['to_cm'], 'from_mm' => $t['from_mm'], 'to_mm' => $t['to_mm'],
+        'price' => eur($t['price']), 'price_cents' => $t['price'], 'price_text' => money($t['price'])], $tiers);
 }
 
 /**
- * Ancho propuesto al añadir o sustituir un módulo: el que pide la persona si es válido; si no, el «hasta» del
- * tramo más cercano. Sin tramos, null.
+ * Ancho propuesto (mm) al añadir o sustituir un módulo: el preferido si es válido; si no, el borde del tramo más
+ * cercano. Sin preferencia, el ancho por defecto del tipo. Sin tramos, null.
  */
-function ancho_sugerido(int $typeId, int $nodeId, ?int $preferred = null): ?int
+function ancho_sugerido(int $typeId, int $nodeId, ?int $preferredMm = null): ?int
 {
     $tiers = tiers_effective($typeId, $nodeId)['tiers'];
     if (!$tiers) return null;
-    $preferred ??= 60;
+    $preferredMm ??= (int) (module_type_get($typeId)['width_mm'] ?? 600);
     $best = null;
     foreach ($tiers as $t) {
-        if ($preferred >= $t['from_cm'] && $preferred <= $t['to_cm']) return $preferred;
-        $cand = $preferred < $t['from_cm'] ? $t['from_cm'] : $t['to_cm'];
-        if ($best === null || abs($cand - $preferred) < abs($best - $preferred)) $best = $cand;
+        if ($preferredMm >= $t['from_mm'] && $preferredMm <= $t['to_mm']) return $preferredMm;
+        $cand = $preferredMm < $t['from_mm'] ? $t['from_mm'] : $t['to_mm'];
+        if ($best === null || abs($cand - $preferredMm) < abs($best - $preferredMm)) $best = $cand;
     }
     return $best;
 }
 
 /**
  * Guarda un tramo (alta o edición) validando que no se solape con los de su grupo (tipo + nodo, o tipo general).
- * $price en céntimos.
+ * $from y $to en cm con un decimal como mucho (40 o 60,1); se guardan en mm. $price en céntimos.
  */
 function tier_save(int $typeId, ?int $nodeId, mixed $from, mixed $to, int $price, ?int $id = null): int
 {
     module_type_get($typeId) ?? throw new UcError(t('El tipo de módulo {id} no existe.', ['id' => $typeId]), [], 404);
     if ($nodeId !== null && !node_get($nodeId)) throw new UcError(t('El nodo {id} no existe.', ['id' => $nodeId]), [], 404);
-    $f = parse_int($from, t('Desde (cm)'), 1, 10000);
-    $tt = parse_int($to, t('Hasta (cm)'), 1, 10000);
-    if ($f > $tt) throw new UcError(t('El tramo {f}–{t} no vale: «desde» ({f}) es mayor que «hasta» ({t}).', ['f' => $f, 't' => $tt]));
+    $f = parse_width_mm($from, t('Desde (cm)'));
+    $tt = parse_width_mm($to, t('Hasta (cm)'));
+    if ($f > $tt) throw new UcError(t('El tramo {f}–{t} no vale: «desde» ({f}) es mayor que «hasta» ({t}).', ['f' => cm_text($f), 't' => cm_text($tt)]));
     if ($price < 0) throw new UcError(t('El precio no puede ser negativo.'));
     $others = rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND ' . ($nodeId === null ? 'node_id IS NULL' : 'node_id = ' . $nodeId) . ' AND id != ?', [$typeId, $id ?? 0]);
     foreach ($others as $o) {
-        if ($f <= (int) $o['to_cm'] && $tt >= (int) $o['from_cm']) {
+        if ($f <= (int) $o['to_mm'] && $tt >= (int) $o['from_mm']) {
             throw new UcError(t('El tramo {f}–{t} cm se solapa con el tramo {of}–{ot} cm que ya existe. Cada medida tiene que caer en un solo tramo.', [
-                'f' => $f, 't' => $tt, 'of' => $o['from_cm'], 'ot' => $o['to_cm']]));
+                'f' => cm_text($f), 't' => cm_text($tt), 'of' => cm_text((int) $o['from_mm']), 'ot' => cm_text((int) $o['to_mm'])]));
         }
     }
-    $d = ['module_type_id' => $typeId, 'node_id' => $nodeId, 'from_cm' => $f, 'to_cm' => $tt, 'price' => $price];
+    $d = ['module_type_id' => $typeId, 'node_id' => $nodeId, 'from_mm' => $f, 'to_mm' => $tt, 'price' => $price];
     if ($id === null) {
         $id = insert('price_tiers', $d);
     } else {
         if (!val('SELECT 1 FROM price_tiers WHERE id = ? AND module_type_id = ?', [$id, $typeId])) throw new UcError(t('El tramo {id} no es de este tipo.', ['id' => $id]), [], 404);
         update('price_tiers', $d, 'id = ?', [$id]);
     }
-    audit('tier.save', module_type_get($typeId)['name'] . ($nodeId ? ' @ ' . node_path_text($nodeId) : '') . ": {$f}–{$tt} = " . money($price));
+    audit('tier.save', module_type_get($typeId)['name'] . ($nodeId ? ' @ ' . node_path_text($nodeId) : '') . ': ' . cm_text($f) . '–' . cm_text($tt) . ' cm = ' . money($price));
     return $id;
+}
+
+/**
+ * Huecos entre tramos de un grupo (p. ej. entre 40 y 41 cm: 40,5 no tiene precio). Para avisar en el panel.
+ * @return list<array{from_mm:int,to_mm:int}>
+ */
+function tier_gaps(array $tiers): array
+{
+    $gaps = [];
+    usort($tiers, fn($a, $b) => $a['from_mm'] <=> $b['from_mm']);
+    for ($i = 1; $i < count($tiers); $i++) {
+        if ($tiers[$i]['from_mm'] > $tiers[$i - 1]['to_mm'] + 1) $gaps[] = ['from_mm' => $tiers[$i - 1]['to_mm'], 'to_mm' => $tiers[$i]['from_mm']];
+    }
+    return $gaps;
 }
 
 function tier_delete(int $typeId, int $id): void
@@ -109,10 +143,11 @@ function tier_delete(int $typeId, int $id): void
 /**
  * Precio de una configuración (o de una lista de módulos) para un nodo final.
  *
- * @param list<array{id?:int, name?:string, items:list<array{id?:int, module_type_id:int, width_cm:int}>}> $walls
+ * @param list<array{id?:int, name?:string, items:list<array{id?:int, module_type_id:int, width_mm?:int, width_cm?:int|float}>}> $walls
  * @return array{node_id:int, walls:list<array>, count:int, total:int, valid:bool, invalid_count:int, tax_rate:float, tax:int, total_with_tax:int}
- *   Cada línea: module_type_id, type_name, family, width_cm, valid, price (céntimos|null), tier_from_cm, tier_to_cm,
- *   tier_node_id, tiers (los posibles) y error (si no es válida).
+ *   Cada línea: module_type_id, type_name, family, width_mm, width_cm, valid, price (céntimos|null), tier_from_mm/_cm,
+ *   tier_to_mm/_cm, tier_node_id, tiers (los posibles) y error (si no es válida). Un ancho fuera del mínimo/máximo
+ *   del tipo tampoco es válido.
  */
 function precio_configuracion(int $nodeId, array $walls): array
 {
@@ -126,11 +161,11 @@ function precio_configuracion(int $nodeId, array $walls): array
         $items = [];
         foreach ($w['items'] ?? [] as $it) {
             $typeId = (int) ($it['module_type_id'] ?? 0);
-            $width = (int) ($it['width_cm'] ?? 0);
+            $width = isset($it['width_mm']) ? (int) $it['width_mm'] : (int) round(((float) ($it['width_cm'] ?? 0)) * 10);
             $type = $types[$typeId] ??= module_type_get($typeId);
-            $line = array_intersect_key($it, ['id' => 1]) + ['module_type_id' => $typeId, 'type_name' => $type['name'] ?? null,
-                'family' => $type['family'] ?? null, 'width_cm' => $width, 'valid' => false, 'price' => null,
-                'tier_from_cm' => null, 'tier_to_cm' => null, 'tier_node_id' => null, 'tiers' => []];
+            $line = array_intersect_key($it, ['id' => 1, 'height_mm' => 1, 'depth_mm' => 1]) + ['module_type_id' => $typeId, 'type_name' => $type['name'] ?? null,
+                'family' => $type['family'] ?? null, 'width_mm' => $width, 'width_cm' => mm_to_cm($width), 'valid' => false, 'price' => null,
+                'tier_from_mm' => null, 'tier_to_mm' => null, 'tier_from_cm' => null, 'tier_to_cm' => null, 'tier_node_id' => null, 'tiers' => []];
             $count++;
             if (!$type) {
                 $line['error'] = t('El tipo de módulo {id} no existe.', ['id' => $typeId]);
@@ -138,13 +173,15 @@ function precio_configuracion(int $nodeId, array $walls): array
                 $eff = $cacheTiers[$typeId] ??= tiers_effective($typeId, $nodeId);
                 $line['tiers'] = $eff['tiers'];
                 $line['tier_node_id'] = $eff['node_id'];
-                foreach ($eff['tiers'] as $t) {
-                    if ($width >= $t['from_cm'] && $width <= $t['to_cm']) {
-                        $line = array_merge($line, ['valid' => true, 'price' => $t['price'], 'tier_from_cm' => $t['from_cm'], 'tier_to_cm' => $t['to_cm']]);
+                $range = width_range_error($type, $width);
+                foreach ($range === null ? $eff['tiers'] : [] as $t) {
+                    if ($width >= $t['from_mm'] && $width <= $t['to_mm']) {
+                        $line = array_merge($line, ['valid' => true, 'price' => $t['price'], 'tier_from_mm' => $t['from_mm'], 'tier_to_mm' => $t['to_mm'],
+                            'tier_from_cm' => $t['from_cm'], 'tier_to_cm' => $t['to_cm']]);
                         break;
                     }
                 }
-                if (!$line['valid']) $line['error'] = tiers_error_text($type['name'], $width, $eff['tiers']);
+                if (!$line['valid']) $line['error'] = $range ?? tiers_error_text($type['name'], $width, $eff['tiers']);
             }
             if ($line['valid']) $total += $line['price']; else $invalid++;
             $items[] = $line;

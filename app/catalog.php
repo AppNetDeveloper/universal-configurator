@@ -169,9 +169,21 @@ function module_type_save(array $in, ?int $id = null): int
         'ref' => mb_substr(trim((string) ($in['ref'] ?? '')), 0, 60),
         'description' => trim((string) ($in['description'] ?? '')),
         'family' => mb_substr(trim((string) ($in['family'] ?? '')), 0, 60),
-        'depth_mm' => parse_int($in['depth_mm'] ?? 600, t('Fondo (mm)'), 1, 5000),
+        'width_mm' => parse_int($in['width_mm'] ?? 600, t('Ancho por defecto (mm)'), 1, 10000),
+        'height_mm' => parse_int($in['height_mm'] ?? 720, t('Alto (mm)'), 1, 5000),
+        'depth_mm' => parse_int($in['depth_mm'] ?? 560, t('Fondo (mm)'), 1, 5000),
+        'min_width_mm' => ($in['min_width_mm'] ?? '') === '' || $in['min_width_mm'] === null ? null : parse_int($in['min_width_mm'], t('Ancho mínimo (mm)'), 1, 10000),
+        'max_width_mm' => ($in['max_width_mm'] ?? '') === '' || $in['max_width_mm'] === null ? null : parse_int($in['max_width_mm'], t('Ancho máximo (mm)'), 1, 10000),
+        'board_mm' => parse_thickness($in['board_mm'] ?? 19, t('Tablero T (mm)')),
+        'back_mm' => parse_thickness($in['back_mm'] ?? 8, t('Trasera B (mm)')),
         'sort' => isset($in['sort']) && $in['sort'] !== '' ? parse_int($in['sort'], t('Orden'), 0, 100000) : 0,
     ];
+    if ($d['min_width_mm'] !== null && $d['max_width_mm'] !== null && $d['min_width_mm'] > $d['max_width_mm']) {
+        throw new UcError(t('El ancho mínimo ({a} mm) es mayor que el máximo ({b} mm).', ['a' => $d['min_width_mm'], 'b' => $d['max_width_mm']]));
+    }
+    if (($d['min_width_mm'] !== null && $d['width_mm'] < $d['min_width_mm']) || ($d['max_width_mm'] !== null && $d['width_mm'] > $d['max_width_mm'])) {
+        throw new UcError(t('El ancho por defecto ({w} mm) tiene que estar entre el mínimo y el máximo.', ['w' => $d['width_mm']]));
+    }
     if ($id === null) {
         $id = insert('module_types', $d + ['active' => 1]);
         audit('module_type.create', $d['name']);
@@ -181,6 +193,14 @@ function module_type_save(array $in, ?int $id = null): int
         audit('module_type.update', $d['name']);
     }
     return $id;
+}
+
+/** Espesor en mm con un decimal como mucho (19, 18,5), entre 1 y 100. */
+function parse_thickness(mixed $v, string $field): float
+{
+    $s = str_replace(',', '.', trim((string) $v));
+    if (!preg_match('/^\d{1,3}(\.\d)?$/', $s) || (float) $s <= 0 || (float) $s > 100) throw new UcError(t('{campo}: «{v}» no es un espesor válido en mm (p. ej. 19 o 18,5).', ['campo' => $field, 'v' => mb_substr((string) $v, 0, 20)]));
+    return (float) $s;
 }
 
 function module_type_set_active(int $id, bool $active): void
@@ -205,7 +225,7 @@ function layout_walls_of(int $nodeId): array
 
 /**
  * Composición con la que arranca un nodo final: la suya o la del antepasado más cercano que tenga paredes.
- * @return array{node_id:?int, walls:list<array>}  cada pared con 'modules' => [{module_type_id, width_cm}]
+ * @return array{node_id:?int, walls:list<array>}  cada pared con 'modules' => [{module_type_id, width_mm}]
  */
 function layout_for(int $nodeId): array
 {
@@ -257,14 +277,15 @@ function default_module_save(int $wallId, int $typeId, mixed $width, ?int $id = 
 {
     $wall = row('SELECT * FROM layout_walls WHERE id = ?', [$wallId]) ?? throw new UcError(t('La pared {id} no existe.', ['id' => $wallId]), [], 404);
     $type = module_type_get($typeId) ?? throw new UcError(t('El tipo de módulo {id} no existe.', ['id' => $typeId]));
-    $w = parse_int($width, t('Ancho (cm)'), 1, 10000);
+    $w = parse_width_mm($width, t('Ancho (cm)'));
+    if ($e = width_range_error($type, $w)) throw new UcError($e);
     $hit = tier_lookup($typeId, (int) $wall['node_id'], $w);
-    if (!$hit['tier']) throw new UcError(tiers_error_text($type['name'], $w, $hit['tiers']), ['tiers' => $hit['tiers']]);
+    if (!$hit['tier']) throw new UcError(tiers_error_text($type['name'], $w, $hit['tiers']), ['tiers' => tiers_public($hit['tiers'])]);
     if ($id === null) {
         $sort = (int) val('SELECT COALESCE(MAX(sort), 0) + 10 FROM default_modules WHERE layout_wall_id = ?', [$wallId]);
-        $id = insert('default_modules', ['layout_wall_id' => $wallId, 'module_type_id' => $typeId, 'width_cm' => $w, 'sort' => $sort]);
+        $id = insert('default_modules', ['layout_wall_id' => $wallId, 'module_type_id' => $typeId, 'width_mm' => $w, 'sort' => $sort]);
     } else {
-        update('default_modules', ['module_type_id' => $typeId, 'width_cm' => $w], 'id = ? AND layout_wall_id = ?', [$id, $wallId]);
+        update('default_modules', ['module_type_id' => $typeId, 'width_mm' => $w], 'id = ? AND layout_wall_id = ?', [$id, $wallId]);
     }
     return $id;
 }

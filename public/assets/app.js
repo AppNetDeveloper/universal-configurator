@@ -15,6 +15,38 @@
     if (navigator.clipboard) navigator.clipboard.writeText(c.value).catch(function () {});
   });
 
+  // ---- panel: vista previa en vivo de las fórmulas del despiece (la calcula el servidor; aquí no se evalúa nada)
+  var varsEl = document.querySelector('[data-parts-vars]');
+  if (varsEl) {
+    var timers = new WeakMap();
+    document.addEventListener('input', function (e) {
+      var inp = e.target.closest('[data-expr]');
+      if (!inp) return;
+      var row = inp.closest('[data-part-row]');
+      clearTimeout(timers.get(row));
+      timers.set(row, setTimeout(function () {
+        var body = new URLSearchParams();
+        body.set('_csrf', varsEl.getAttribute('data-csrf'));
+        row.querySelectorAll('[data-expr]').forEach(function (x) { body.set(x.getAttribute('data-expr'), x.value); });
+        fetch(varsEl.getAttribute('data-url'), { method: 'POST', credentials: 'same-origin', body: body, headers: { 'Accept': 'application/json' } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            var out = row.querySelector('[data-preview]');
+            var bad = [];
+            row.querySelectorAll('[data-expr]').forEach(function (x) {
+              var res = j.result[x.getAttribute('data-expr')];
+              x.classList.toggle('is-bad', !res.ok);
+              x.title = res.ok ? res.text : res.error;
+              if (!res.ok) bad.push(res.error);
+            });
+            out.textContent = '';
+            if (bad.length) out.appendChild(Object.assign(document.createElement('span'), { className: 'line-error', textContent: bad[0] }));
+            else out.textContent = j.result.thickness.text.replace(' mm', '') + ' · ' + j.result.length_expr.text.replace(' mm', '') + ' × ' + j.result.width_expr.text;
+          }).catch(function () {});
+      }, 300));
+    });
+  }
+
   var dataEl = document.getElementById('uc-data');
   if (!dataEl) return;
   var D = JSON.parse(dataEl.textContent);
@@ -120,25 +152,29 @@
     });
     card.appendChild(h('div', { class: 'mod-top' }, [it.family ? h('span', { class: 'fam', text: it.family }) : null, h('span', { class: 'mod-name', text: it.type_name }), del]));
 
-    var input = h('input', { type: 'number', inputmode: 'numeric', min: '1', step: '1', value: String(width), 'aria-label': T.width + ' (cm) ' + it.type_name });
+    // Ancho en cm con un decimal como mucho («58,5» o «58.5»); − / + mueven 1 cm. El servidor valida y calcula.
+    var cmText = function (v) { return String(v).replace('.', ','); };
+    var cmNum = function (s) { var n = parseFloat(String(s).trim().replace(',', '.')); return isNaN(n) ? null : Math.round(n * 10) / 10; };
+    var input = h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', value: cmText(width), 'aria-label': T.width + ' (cm) ' + it.type_name });
     var minus = h('button', { type: 'button', 'aria-label': '−1 cm', text: '−' });
     var plus = h('button', { type: 'button', 'aria-label': '+1 cm', text: '+' });
     function queue(v) {
-      input.value = String(v);
+      input.value = cmText(v);
       clearTimeout(pending[it.id]);
-      pending[it.id] = setTimeout(function () { send([{ op: 'set_width', item_id: it.id, width_cm: v }], it.id); }, 450);
+      pending[it.id] = setTimeout(function () { send([{ op: 'set_width', item_id: it.id, width_cm: cmText(v) }], it.id); }, 450);
     }
-    minus.addEventListener('click', function () { var v = parseInt(input.value, 10) || it.width_cm; if (v > 1) queue(v - 1); });
-    plus.addEventListener('click', function () { var v = parseInt(input.value, 10) || it.width_cm; queue(v + 1); });
+    minus.addEventListener('click', function () { var v = cmNum(input.value); if (v === null) v = it.width_cm; if (v > 1) queue(Math.round((v - 1) * 10) / 10); });
+    plus.addEventListener('click', function () { var v = cmNum(input.value); if (v === null) v = it.width_cm; queue(Math.round((v + 1) * 10) / 10); });
     input.addEventListener('change', function () {
-      var v = parseInt(input.value, 10);
-      if (!v || String(v) !== input.value.trim()) { input.value = String(width); return; }
+      var raw = input.value.trim();
+      if (raw === '') { input.value = cmText(width); return; }
       clearTimeout(pending[it.id]);
-      send([{ op: 'set_width', item_id: it.id, width_cm: v }], it.id);
+      send([{ op: 'set_width', item_id: it.id, width_cm: raw }], it.id);
     });
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
     var stepper = h('div', { class: 'stepper' }, [minus, input, h('span', { class: 'unit', text: 'cm' }), plus]);
     card.appendChild(h('div', { class: 'mod-mid' }, [stepper, h('span', { class: 'mod-price', text: invalid ? '—' : it.price_text })]));
+    if (it.height_mm && it.depth_mm) card.appendChild(h('p', { class: 'mod-dims', text: T.dims.replace('{w}', String(it.width_mm)).replace('{h}', String(it.height_mm)).replace('{d}', String(it.depth_mm)) }));
 
     if (invalid) card.appendChild(h('p', { class: 'mod-error', role: 'alert', text: err ? err.msg : it.error }));
 
@@ -146,7 +182,7 @@
       var row = h('div', { class: 'tiers', 'aria-label': T.tiers });
       tiers.forEach(function (tr) {
         var current = !invalid && it.tier_from_cm === tr.from_cm && it.tier_to_cm === tr.to_cm;
-        var label = (tr.from_cm === tr.to_cm ? tr.to_cm : tr.from_cm + '–' + tr.to_cm) + ' cm · ' + tr.price_text;
+        var label = (tr.from_cm === tr.to_cm ? cmText(tr.to_cm) : cmText(tr.from_cm) + '–' + cmText(tr.to_cm)) + ' cm · ' + tr.price_text;
         var b = h('button', { type: 'button', class: 'tier' + (current ? ' is-current' : ''), 'aria-pressed': current ? 'true' : 'false', text: label });
         b.addEventListener('click', function () { clearTimeout(pending[it.id]); send([{ op: 'set_width', item_id: it.id, width_cm: tr.to_cm }], it.id); });
         row.appendChild(b);

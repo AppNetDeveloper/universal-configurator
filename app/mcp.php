@@ -69,34 +69,29 @@ function mcp_viewer(): array
 
 function mcp_instructions(): string
 {
+    // Resumen corto de docs/MCP.md (el manual completo). Mismas reglas; si cambias una, cambia las dos.
     return <<<TXT
-    Universal Configurator: configurador de productos por catálogo (cocinas, muebles, armarios…). El catálogo es un
-    árbol de nodos (p. ej. Cocina → Modelo → Color); una configuración parte de un NODO FINAL (is_final) con su
-    composición por defecto: paredes con módulos. Cada módulo tiene un tipo y un ancho en CENTÍMETROS ENTEROS.
+    Universal Configurator: configurador de productos por catálogo (cocinas, muebles, armarios). El catálogo es un árbol
+    de nodos (Cocina → Modelo → Color); una configuración parte de un NODO FINAL (is_final) con su composición por defecto:
+    paredes con módulos. Cada módulo tiene un tipo y un ancho en cm con un decimal como mucho (58,5); el alto y el fondo
+    salen del tipo. Todas las medidas de salida van también en mm (width_mm, height_mm, depth_mm).
 
-    PRECIO (una verdad, en el servidor): cada tipo de módulo tiene tramos de medida [desde_cm, hasta_cm] (ambos incluidos)
-    con un precio fijo por tramo; NO se cobra por centímetro. Un ancho que no cae en ningún tramo NO es válido: el error
-    dice qué tramos hay. Un nodo puede tener tramos propios que sustituyen a los generales (module_types con node_id
-    da los que valen ahí). Total = suma de líneas, en EUR y SIN IVA; el IVA va aparte (tax_rate, tax, total_with_tax).
-    Nunca calcules tú el precio: usa price_check (sin guardar) o lo que devuelven config_get / config_update.
+    FLUJO: catalog_tree (nodo final) → module_types (con node_id: tipos, medidas, tramos y fórmulas que valen ahí)
+    → config_create (borrador; customer opcional) → config_update (ops: set_width, add, replace, remove, customer;
+    todas o ninguna) → price_check (probar sin guardar) / config_get (precio, tramo y despiece) → cut_list (lista de
+    corte) → config_accept SOLO si la persona lo ha confirmado expresamente tras ver el total.
 
-    Flujo recomendado:
-    1. catalog_tree para encontrar el nodo final; module_types (con node_id) para ver tipos, fondos (depth_mm) y tramos.
-    2. price_check para probar una composición sin guardar nada.
-    3. config_create con node_id (borrador con la composición por defecto) o con copy_of (duplica otra).
-    4. config_update con ops: set_width {item_id, width_cm}, remove {item_id}, add {wall_id, module_type_id, width_cm?},
-       replace {item_id, module_type_id, width_cm?}, customer {name, email, phone, notes}. Van todas o ninguna.
-       Los id de líneas (items) y paredes (walls) salen en config_get.
-    5. config_accept SOLO cuando la persona lo haya confirmado expresamente: congela el precio y ya no se puede editar
-       (para cambiar algo aceptado, config_create con copy_of).
+    ESCRIBEN: config_create, config_update y config_accept (permiso write). Las demás solo leen (read).
+    PRECIO: tramos [desde, hasta] cm, ambos incluidos, con un precio fijo por tramo; no se cobra por cm. Un ancho sin
+    tramo o fuera del mínimo/máximo del tipo no es válido: el error dice qué vale. Total en EUR SIN IVA; el IVA aparte.
+    Aceptar congela precio y despiece; una aceptada no se edita: config_create con copy_of la duplica.
 
-    GEOMETRÍA para planos: cada pared tiene direction (x o y: el eje por el que avanza), origin_x_mm y origin_y_mm
-    (su origen en mm); sus módulos van en orden desde el origen con width_cm (cm) y depth_mm (fondo del tipo, mm).
-    La aplicación NO dibuja planos ni hace PDFs: eso lo haces tú con estos datos exactos.
+    La aplicación NO dibuja planos: los dibujas tú. Para dibujar en CAD usa config_get (medidas y despiece) o cut_list: medidas en mm, piezas con cantidad, espesor,
+    largo y ancho (redondeo a 0,5 mm), veta y canto; cada pared trae direction (x o y) y su origen en mm, y sus módulos
+    van en orden desde ese origen. El precio y las piezas los calcula SIEMPRE la app: no los recalcules ni los inventes.
 
-    NO INVENTES DATOS: ni medidas, ni precios, ni datos del cliente que no te haya dado la persona o no estén aquí.
-    Si algo no se puede hacer (permiso del token, configuración de otra persona, aceptada), dilo claramente; nunca
-    digas que lo has hecho. Todas las acciones quedan en el registro de actividad del panel.
+    ERRORES: dicen qué falló (con el valor recibido), qué vale, un ejemplo de llamada y «No se ha hecho nada».
+    Un parámetro que la herramienta no conoce también es un error (nunca se ignora). No inventes datos del cliente.
     TXT;
 }
 
@@ -110,71 +105,87 @@ function mcp_token_note(): string
     return $note;
 }
 
-/** Cada herramienta: description, scope, inputSchema, example (para los errores) y handler(array $args). */
+/** Cada herramienta: description (empieza por cuándo usarla), scope, inputSchema, example (para los errores) y handler(array $args). */
 function mcp_tools(): array
 {
-    $obj = fn(array $props = [], array $required = []) => ['type' => 'object', 'properties' => (object) $props] + ($required ? ['required' => $required] : []);
+    $obj = fn(array $props = [], array $required = []) => ['type' => 'object', 'properties' => (object) $props, 'additionalProperties' => false] + ($required ? ['required' => $required] : []);
     $int = fn(string $d) => ['type' => 'integer', 'description' => $d];
     $str = fn(string $d) => ['type' => 'string', 'description' => $d];
+    $cm = ['type' => ['number', 'string'], 'description' => 'Ancho en cm con un decimal como mucho: 60, 58.5 o "58,5"'];
     $code = $str('Código de la configuración, p. ej. UC-7K3F9QXM');
+    $customer = $obj(['name' => $str('Nombre del cliente'), 'email' => $str('Correo'), 'phone' => $str('Teléfono')]);
     $op = $obj([
         'op' => ['type' => 'string', 'enum' => CONFIG_OPS, 'description' => 'set_width | remove | add | replace | customer'],
         'item_id' => $int('Línea (set_width, remove, replace)'), 'wall_id' => $int('Pared (add)'),
-        'module_type_id' => $int('Tipo de módulo (add, replace)'), 'width_cm' => $int('Ancho en cm enteros (set_width; opcional en add/replace)'),
+        'module_type_id' => $int('Tipo de módulo (add, replace)'), 'width_cm' => $cm, 'width_mm' => $int('Ancho en mm enteros (alternativa a width_cm)'),
         'name' => $str('customer: nombre del cliente'), 'email' => $str('customer: correo'), 'phone' => $str('customer: teléfono'), 'notes' => $str('customer: notas'),
     ], ['op']);
 
     return [
         'catalog_tree' => [
-            'description' => 'Árbol de nodos activos del catálogo (id, nombre, descripción, imagen o color, hijos y si es final). Una configuración se crea desde un nodo final.',
+            'description' => 'Úsala primero, para encontrar el nodo final que hay que configurar. Árbol de nodos activos del catálogo (id, nombre, descripción, imagen o color, hijos y si es final).',
             'scope' => 'read', 'inputSchema' => $obj(), 'example' => [],
             'handler' => fn(array $a) => ['tree' => mcp_tree(node_tree(true))],
         ],
         'module_types' => [
-            'description' => 'Tipos de módulo activos con su familia, referencia, fondo (depth_mm) y tramos de precio: generales (tiers) y por nodo (node_tiers). Con node_id añade effective_tiers: los que valen en ese nodo (los de su antepasado más cercano con tramos, o los generales).',
+            'description' => 'Úsala antes de añadir o sustituir módulos (con node_id), para saber qué tipos hay, sus medidas y qué anchos valen. Devuelve cada tipo con medidas por defecto en mm (width_mm, height_mm, depth_mm, mínimo y máximo), espesores (board_mm = T, back_mm = B), tramos de precio y las fórmulas del despiece (parts). Con node_id añade effective_tiers: los tramos que valen en ese nodo.',
             'scope' => 'read', 'inputSchema' => $obj(['node_id' => $int('Nodo (opcional) para ver los tramos que valen ahí')]), 'example' => ['node_id' => 12],
             'handler' => fn(array $a) => ['types' => mcp_module_types(isset($a['node_id']) ? parse_int($a['node_id'], 'node_id') : null), 'currency' => 'EUR', 'prices_include_tax' => false],
         ],
         'config_list' => [
-            'description' => 'Configuraciones (las tuyas, o todas si el token es de un admin), de la más nueva a la más vieja, paginadas. Filtros: status (draft, accepted, cancelled), from y to (fecha de creación AAAA-MM-DD), q (código, nombre, correo o teléfono del cliente).',
+            'description' => 'Úsala para buscar configuraciones (por cliente, código, estado o fechas). Las tuyas, o todas si el token es de un admin, de la más nueva a la más vieja, paginadas. Filtros: status (draft, accepted, cancelled), from y to (AAAA-MM-DD), q (código, nombre, correo o teléfono).',
             'scope' => 'read', 'inputSchema' => $obj(['status' => ['type' => 'string', 'enum' => array_keys(CONFIG_STATUSES)], 'from' => $str('Desde AAAA-MM-DD'), 'to' => $str('Hasta AAAA-MM-DD'),
                 'q' => $str('Texto a buscar'), 'page' => $int('Página (1…)'), 'per_page' => $int('Por página (máx. 100, 25 por defecto)')]),
             'example' => ['status' => 'accepted', 'from' => '2026-11-01', 'per_page' => 25],
             'handler' => fn(array $a) => config_list(mcp_viewer(), $a, isset($a['page']) ? parse_int($a['page'], 'page') : 1, isset($a['per_page']) ? parse_int($a['per_page'], 'per_page', 1, 100) : 25),
         ],
         'config_get' => [
-            'description' => 'Una configuración entera: nodo (camino), cliente, estado, paredes con su geometría (direction, origin_x_mm, origin_y_mm) y sus módulos en orden (id de línea, tipo, width_cm, depth_mm, tramo y precio de cada línea), total sin IVA, IVA y total con IVA. Si está aceptada, los precios son la foto congelada.',
+            'description' => 'Úsala para leer una configuración entera, también para dibujarla en CAD: nodo, cliente, estado en palabras, paredes con geometría (direction, origin_x_mm, origin_y_mm) y sus módulos en orden con width_mm/height_mm/depth_mm, tramo aplicado, precio (número y texto) y parts (el despiece calculado: cantidad, espesor, largo y ancho en mm). Total sin IVA, IVA y total con IVA. Si está aceptada, precios y piezas son la foto congelada.',
             'scope' => 'read', 'inputSchema' => $obj(['code' => $code], ['code']), 'example' => ['code' => 'UC-7K3F9QXM'],
             'handler' => fn(array $a) => ['config' => config_get((string) $a['code'], mcp_viewer())],
         ],
         'price_check' => [
-            'description' => 'Precio de una lista de módulos para un nodo final, SIN guardar nada: precio y tramo de cada línea, total, IVA y qué medidas no son válidas (con los tramos posibles).',
+            'description' => 'Úsala para probar precios y medidas SIN guardar nada (p. ej. antes de proponer un cambio): precio y tramo de cada módulo, total, IVA y qué medidas no son válidas (con los tramos posibles).',
             'scope' => 'read', 'inputSchema' => $obj(['node_id' => $int('Nodo final'), 'modules' => ['type' => 'array', 'description' => 'Módulos [{module_type_id, width_cm}]',
-                'items' => $obj(['module_type_id' => $int('Tipo'), 'width_cm' => $int('Ancho en cm enteros')], ['module_type_id', 'width_cm'])]], ['node_id', 'modules']),
-            'example' => ['node_id' => 12, 'modules' => [['module_type_id' => 3, 'width_cm' => 60], ['module_type_id' => 5, 'width_cm' => 80]]],
+                'items' => $obj(['module_type_id' => $int('Tipo'), 'width_cm' => $cm, 'width_mm' => $int('Ancho en mm (alternativa)')], ['module_type_id'])]], ['node_id', 'modules']),
+            'example' => ['node_id' => 12, 'modules' => [['module_type_id' => 3, 'width_cm' => 58.5], ['module_type_id' => 5, 'width_cm' => 80]]],
             'handler' => fn(array $a) => mcp_price_check($a),
         ],
-        'config_create' => [
-            'description' => 'Crea un borrador desde un nodo final (node_id) con su composición por defecto, o duplica una configuración existente (copy_of, también si está aceptada) en un borrador nuevo con los precios de hoy. Queda a nombre del dueño del token.',
-            'scope' => 'write', 'inputSchema' => $obj(['node_id' => $int('Nodo final (ver catalog_tree)'), 'copy_of' => $str('Código de la configuración a duplicar')]),
-            'example' => ['node_id' => 12],
+        'cut_list' => [
+            'description' => 'Úsala para fabricar o dibujar las piezas: lista de corte agregada de una configuración (piezas iguales sumadas por espesor, largo y ancho en mm, con veta, canto y el módulo de origen de cada una).',
+            'scope' => 'read', 'inputSchema' => $obj(['code' => $code], ['code']), 'example' => ['code' => 'UC-7K3F9QXM'],
             'handler' => function (array $a) {
-                if (!empty($a['copy_of'])) return ['config' => config_copy((string) $a['copy_of'], mcp_viewer())];
+                $v = config_get((string) $a['code'], mcp_viewer());
+                $cl = cut_list($v);
+                return ['code' => $v['code'], 'status' => $v['status'], 'status_label' => $v['status_label'], 'frozen' => $v['frozen'], 'units' => 'mm',
+                    'pieces' => array_sum(array_column($cl, 'qty')), 'cut_list' => $cl];
+            },
+        ],
+        'config_create' => [
+            'description' => 'ESCRIBE. Úsala para empezar una configuración: borrador desde un nodo final (node_id) con su composición por defecto, opcionalmente con los datos del cliente (customer: name, email, phone); o duplica una existente (copy_of, también aceptada) en un borrador nuevo con precios de hoy. Queda a nombre del dueño del token.',
+            'scope' => 'write', 'inputSchema' => $obj(['node_id' => $int('Nodo final (ver catalog_tree)'), 'copy_of' => $str('Código de la configuración a duplicar'), 'customer' => $customer]),
+            'example' => ['node_id' => 12, 'customer' => ['name' => 'Marta Ruiz', 'email' => 'marta@ejemplo.com', 'phone' => '600 000 000']],
+            'handler' => function (array $a) {
+                if (isset($a['customer']) && !is_array($a['customer'])) throw new UcError(t('customer tiene que ser un objeto {name, email, phone}.'));
+                if (!empty($a['copy_of'])) {
+                    if (isset($a['node_id']) || isset($a['customer'])) throw new UcError(t('Con copy_of no se pasan node_id ni customer: duplica tal cual y luego usa config_update.'));
+                    return ['config' => config_copy((string) $a['copy_of'], mcp_viewer())];
+                }
                 if (!isset($a['node_id'])) throw new UcError(t('Falta node_id (un nodo final de catalog_tree) o copy_of (un código).'));
-                return ['config' => config_create(parse_int($a['node_id'], 'node_id'), mcp_viewer())];
+                return ['config' => config_create(parse_int($a['node_id'], 'node_id'), mcp_viewer(), (array) ($a['customer'] ?? []))];
             },
         ],
         'config_update' => [
-            'description' => 'Cambia un borrador con una lista de operaciones (todas o ninguna): set_width {item_id, width_cm}, remove {item_id}, add {wall_id, module_type_id, width_cm?}, replace {item_id, module_type_id, width_cm?}, customer {name?, email?, phone?, notes?}. Sin width_cm, add usa un ancho válido sugerido y replace conserva el ancho si vale (si no, el del tramo más cercano, y lo dice en notes). Devuelve la configuración y el total nuevo. Una aceptada no se edita.',
+            'description' => 'ESCRIBE. Úsala para cambiar un borrador: lista de operaciones, todas o ninguna: set_width {item_id, width_cm}, remove {item_id}, add {wall_id, module_type_id, width_cm?}, replace {item_id, module_type_id, width_cm?}, customer {name?, email?, phone?, notes?}. width_cm admite un decimal (58,5). Sin width_cm, add usa un ancho válido y replace conserva el ancho si vale (si no, el del tramo más cercano, y lo dice en notes). Devuelve la configuración con el total y el despiece nuevos. Una aceptada no se edita.',
             'scope' => 'write', 'inputSchema' => $obj(['code' => $code, 'ops' => ['type' => 'array', 'description' => 'Operaciones, en orden', 'items' => $op]], ['code', 'ops']),
-            'example' => ['code' => 'UC-7K3F9QXM', 'ops' => [['op' => 'set_width', 'item_id' => 41, 'width_cm' => 60], ['op' => 'add', 'wall_id' => 7, 'module_type_id' => 3, 'width_cm' => 80]]],
+            'example' => ['code' => 'UC-7K3F9QXM', 'ops' => [['op' => 'set_width', 'item_id' => 41, 'width_cm' => 58.5], ['op' => 'add', 'wall_id' => 7, 'module_type_id' => 3, 'width_cm' => 80]]],
             'handler' => fn(array $a) => config_apply_ops((string) $a['code'], is_array($a['ops']) ? $a['ops'] : [], mcp_viewer()),
         ],
         'config_accept' => [
-            'description' => 'Acepta un borrador y congela su precio (tramo y precio de cada línea, total e IVA); después ya no se edita. AVISO: la aceptación la debe confirmar la persona: llama a esta herramienta solo si te lo ha pedido expresamente tras ver el total.',
+            'description' => 'ESCRIBE. Úsala solo cuando la persona haya confirmado expresamente, tras ver el total, que acepta: acepta un borrador y congela su precio y su despiece; después ya no se edita. AVISO: la aceptación la debe confirmar la persona.',
             'scope' => 'write', 'inputSchema' => $obj(['code' => $code], ['code']), 'example' => ['code' => 'UC-7K3F9QXM'],
             'handler' => fn(array $a) => ['config' => config_accept((string) $a['code'], mcp_viewer()),
-                'note' => t('Aceptada y con el precio congelado. Confirma a la persona el código y el total; para cambiarla habrá que duplicarla.')],
+                'note' => t('Aceptada y con el precio y el despiece congelados. Confirma a la persona el código y el total; para cambiarla habrá que duplicarla.')],
         ],
     ];
 }
@@ -187,18 +198,24 @@ function mcp_tree(array $tree): array
 
 function mcp_module_types(?int $nodeId): array
 {
-    if ($nodeId !== null && !node_get($nodeId)) throw new UcError(t('El nodo {id} no existe. Mira los nodos con catalog_tree.', ['id' => $nodeId]));
+    if ($nodeId !== null && (!node_get($nodeId) || !node_branch_active($nodeId))) throw new UcError(t('El nodo {id} no existe o no está disponible. Mira los nodos con catalog_tree.', ['id' => $nodeId]));
     $out = [];
     foreach (module_types_all() as $t) {
         $tid = (int) $t['id'];
-        $general = rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id IS NULL ORDER BY from_cm', [$tid]);
+        $general = array_map('tier_row', rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id IS NULL ORDER BY from_mm', [$tid]));
         $byNode = [];
-        foreach (rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id IS NOT NULL ORDER BY node_id, from_cm', [$tid]) as $r) {
-            $byNode[(int) $r['node_id']][] = ['id' => (int) $r['id'], 'from_cm' => (int) $r['from_cm'], 'to_cm' => (int) $r['to_cm'], 'price' => (int) $r['price']];
+        foreach (rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id IS NOT NULL ORDER BY node_id, from_mm', [$tid]) as $r) {
+            if (!node_branch_active((int) $r['node_id'])) continue; // precios de ramas desactivadas: no se enseñan
+            $byNode[(int) $r['node_id']][] = tier_row($r);
         }
-        $item = ['id' => $tid, 'name' => $t['name'], 'ref' => $t['ref'], 'family' => $t['family'], 'description' => $t['description'], 'depth_mm' => (int) $t['depth_mm'],
-            'tiers' => tiers_public(array_map(fn($r) => ['from_cm' => (int) $r['from_cm'], 'to_cm' => (int) $r['to_cm'], 'price' => (int) $r['price']], $general)),
-            'node_tiers' => array_map(fn($nid, $ts) => ['node_id' => $nid, 'node' => node_path_text($nid), 'tiers' => tiers_public($ts)], array_keys($byNode), $byNode)];
+        $item = ['id' => $tid, 'name' => $t['name'], 'ref' => $t['ref'], 'family' => $t['family'], 'description' => $t['description'],
+            'width_mm' => (int) $t['width_mm'], 'height_mm' => (int) $t['height_mm'], 'depth_mm' => (int) $t['depth_mm'],
+            'min_width_mm' => $t['min_width_mm'] === null ? null : (int) $t['min_width_mm'], 'max_width_mm' => $t['max_width_mm'] === null ? null : (int) $t['max_width_mm'],
+            'board_mm' => (float) $t['board_mm'], 'back_mm' => (float) $t['back_mm'],
+            'tiers' => tiers_public($general),
+            'node_tiers' => array_map(fn($nid, $ts) => ['node_id' => $nid, 'node' => node_path_text($nid), 'tiers' => tiers_public($ts)], array_keys($byNode), $byNode),
+            'parts' => parts_definition($t),
+            'parts_default' => array_map(fn($p) => array_diff_key($p, ['formulas' => 1]), piezas_de_linea(['module_type_id' => $tid]))];
         if ($nodeId !== null) {
             $eff = tiers_effective($tid, $nodeId);
             $item['effective_tiers'] = tiers_public($eff['tiers']);
@@ -212,20 +229,22 @@ function mcp_module_types(?int $nodeId): array
 function mcp_price_check(array $a): array
 {
     $nodeId = parse_int($a['node_id'], 'node_id');
-    if (!node_get($nodeId)) throw new UcError(t('El nodo {id} no existe. Mira los nodos con catalog_tree.', ['id' => $nodeId]));
+    if (!node_get($nodeId) || !node_branch_active($nodeId)) throw new UcError(t('El nodo {id} no existe o no está disponible. Mira los nodos con catalog_tree.', ['id' => $nodeId]));
     if (!is_array($a['modules']) || !array_is_list($a['modules'])) throw new UcError(t('modules debe ser una lista [{module_type_id, width_cm}].'));
     $items = [];
     foreach ($a['modules'] as $i => $m) {
         if (!is_array($m)) throw new UcError(t('modules[{i}] debe ser un objeto {module_type_id, width_cm}.', ['i' => $i]));
-        $items[] = ['module_type_id' => parse_int($m['module_type_id'] ?? null, "modules[$i].module_type_id"), 'width_cm' => parse_int($m['width_cm'] ?? null, "modules[$i].width_cm", 1, 10000)];
+        reject_unknown_keys($m, ['module_type_id', 'width_cm', 'width_mm'], "modules[$i]");
+        $w = op_width_mm($m) ?? throw new UcError(t('modules[{i}] necesita width_cm (p. ej. 58,5).', ['i' => $i]));
+        $items[] = ['module_type_id' => parse_int($m['module_type_id'] ?? null, "modules[$i].module_type_id"), 'width_mm' => $w];
     }
     $p = precio_configuracion($nodeId, [['name' => '', 'items' => $items]]);
-    $lines = array_map(fn($l) => ['module_type_id' => $l['module_type_id'], 'type_name' => $l['type_name'], 'width_cm' => $l['width_cm'], 'valid' => $l['valid'],
-        'tier_from_cm' => $l['tier_from_cm'], 'tier_to_cm' => $l['tier_to_cm'], 'price' => eur($l['price']), 'error' => $l['error'] ?? null,
-        'tiers' => $l['valid'] ? [] : tiers_public($l['tiers'])], $p['walls'][0]['items']);
+    $lines = array_map(fn($l) => ['module_type_id' => $l['module_type_id'], 'type_name' => $l['type_name'], 'width_cm' => $l['width_cm'], 'width_mm' => $l['width_mm'],
+        'valid' => $l['valid'], 'tier_from_cm' => $l['tier_from_cm'], 'tier_to_cm' => $l['tier_to_cm'], 'price' => eur($l['price']), 'price_text' => money($l['price']),
+        'error' => $l['error'] ?? null, 'tiers' => $l['valid'] ? [] : tiers_public($l['tiers'])], $p['walls'][0]['items']);
     return ['node_id' => $nodeId, 'node' => node_path_text($nodeId), 'is_final' => node_is_final($nodeId), 'lines' => $lines, 'valid' => $p['valid'],
-        'invalid_count' => $p['invalid_count'], 'currency' => 'EUR', 'total' => eur($p['total']), 'tax_rate' => $p['tax_rate'], 'tax' => eur($p['tax']),
-        'total_with_tax' => eur($p['total_with_tax']), 'saved' => false];
+        'invalid_count' => $p['invalid_count'], 'currency' => 'EUR', 'total' => eur($p['total']), 'total_text' => money($p['total']), 'tax_rate' => $p['tax_rate'],
+        'tax' => eur($p['tax']), 'total_with_tax' => eur($p['total_with_tax']), 'saved' => false];
 }
 
 function mcp_tool_allowed(array $tool): bool
@@ -252,6 +271,7 @@ function mcp_call(string $name, array $args): array
     try {
         if (!$tool) throw new UcError(t('Herramienta desconocida: «{n}». Existen: {lista}.', ['n' => $name, 'lista' => implode(', ', array_keys($tools))]));
         if (!mcp_tool_allowed($tool)) throw new UcError(t("Este token no tiene el permiso '{s}' necesario para {n}. Pide a un administrador un token con «{s}» (panel → Tokens MCP).", ['s' => $tool['scope'], 'n' => $name]));
+        reject_unknown_keys($args, array_keys((array) $tool['inputSchema']['properties']), $name);
         foreach ($tool['inputSchema']['required'] ?? [] as $req) {
             if (!isset($args[$req]) || $args[$req] === '') throw new UcError(t("Falta el parámetro obligatorio '{p}'.", ['p' => $req]));
         }

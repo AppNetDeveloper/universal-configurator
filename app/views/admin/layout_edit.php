@@ -29,7 +29,7 @@ $typeOpts = function (?int $sel) use ($types) {
           <form method="post" action="/admin/composicion/<?= (int) $node['id'] ?>/modulo/<?= (int) $mod['id'] ?>" class="row-form tight">
             <?= csrf_field() ?><input type="hidden" name="wall_id" value="<?= (int) $w['id'] ?>">
             <select name="module_type_id" aria-label="<?= te('Módulo') ?>"><?= $typeOpts((int) $mod['module_type_id']) ?></select>
-            <input type="number" name="width_cm" value="<?= (int) $mod['width_cm'] ?>" min="1" class="w-num" aria-label="<?= te('Ancho (cm)') ?>">
+            <input name="width_cm" inputmode="decimal" value="<?= e(cm_text((int) $mod['width_mm'])) ?>" class="w-num" aria-label="<?= te('Ancho (cm)') ?>">
             <button class="btn btn-ghost btn-sm" type="submit"><?= te('Guardar') ?></button>
           </form>
           <?php if (!$pl['valid']): ?><span class="line-error"><?= e($pl['error']) ?></span><?php endif; ?>
@@ -47,7 +47,7 @@ $typeOpts = function (?int $sel) use ($types) {
   <form method="post" action="/admin/composicion/<?= (int) $node['id'] ?>/modulo" class="row-form tight">
     <?= csrf_field() ?><input type="hidden" name="wall_id" value="<?= (int) $w['id'] ?>">
     <select name="module_type_id" aria-label="<?= te('Módulo') ?>"><?= $typeOpts(null) ?></select>
-    <input type="number" name="width_cm" min="1" class="w-num" placeholder="cm" required aria-label="<?= te('Ancho (cm)') ?>">
+    <input name="width_cm" inputmode="decimal" class="w-num" placeholder="cm" required aria-label="<?= te('Ancho (cm)') ?>">
     <button class="btn btn-primary btn-sm" type="submit">+ <?= te('Añadir módulo') ?></button>
   </form>
   <form method="post" action="/admin/composicion/<?= (int) $node['id'] ?>/pared/<?= (int) $w['id'] ?>/borrar" class="inline right" data-confirm="<?= te('¿Quitar la pared «{n}» y sus módulos?', ['n' => $w['name']]) ?>"><?= csrf_field() ?><button class="btn btn-danger btn-sm" type="submit"><?= te('Quitar pared') ?></button></form>
