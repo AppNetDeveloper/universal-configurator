@@ -12,6 +12,7 @@
     <h2><?= te('Empresa') ?></h2>
     <label><?= te('Nombre') ?><input name="empresa" required maxlength="120" value="<?= $s('empresa') ?>"></label>
     <label><?= te('Logo (dirección de la imagen)') ?><input name="logo" placeholder="https://… o /…" value="<?= $s('logo') ?>"></label>
+    <label><?= te('Dirección pública (para los enlaces de los correos y BionicEye)') ?><input name="url_publica" placeholder="https://configurador.miempresa.com" value="<?= $s('url_publica') ?>"></label>
     <label><?= te('IVA (%) — solo se muestra aparte') ?><input name="iva" inputmode="decimal" value="<?= $s('iva') ?>"></label>
   </section>
   <section class="card stack">
@@ -19,7 +20,7 @@
     <label class="check"><input type="checkbox" name="permitir_registro" value="1"<?= setting_bool('permitir_registro') ? ' checked' : '' ?>> <span><?= te('Registro libre de clientes') ?></span></label>
     <label class="check"><input type="checkbox" name="permitir_invitado" value="1"<?= setting_bool('permitir_invitado') ? ' checked' : '' ?>> <span><?= te('Configurar sin cuenta (invitado: deja sus datos y su consentimiento al aceptar)') ?></span></label>
     <h3><?= te('BionicEye (entrada con la cuenta de BionicEye)') ?></h3>
-    <p class="small muted"><?= te('Opcional. Con la dirección y el client_id de la aplicación OAuth (Passport, con PKCE) aparece el botón «Entrar con BionicEye». Dirección de vuelta: {u}', ['u' => base_url() . '/auth/bionicadri/callback']) ?></p>
+    <p class="small muted"><?= te('Opcional. Con la dirección y el client_id de la aplicación OAuth (Passport, con PKCE) aparece el botón «Entrar con BionicEye». Dirección de vuelta: {u}', ['u' => public_url() . '/auth/bionicadri/callback']) ?></p>
     <label><?= te('Dirección de BionicEye') ?><input name="bionicadri_url" placeholder="https://…" value="<?= $s('bionicadri_url') ?>"></label>
     <label>client_id<input name="bionicadri_client_id" value="<?= $s('bionicadri_client_id') ?>"></label>
   </section>

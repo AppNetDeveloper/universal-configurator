@@ -107,6 +107,15 @@ check_error('enlace caducado (más de 1 hora) no vale', function () use ($lastLi
     q('UPDATE password_resets SET expires_at = ?', [time() - 1]);
     password_reset_consume($tok, 'clave-nueva-99');
 }, 'caducado');
+check('el enlace del correo usa la dirección pública de Ajustes, no la cabecera Host', function () use ($lastLink, $mailLog) {
+    q('DELETE FROM throttle');
+    settings_save(['url_publica' => 'https://configurador.empresa.test']);
+    $_SERVER['HTTP_HOST'] = 'atacante.test';
+    password_reset_request('ana@x.test');
+    unset($_SERVER['HTTP_HOST']);
+    $log = $mailLog();
+    return eq(true, str_contains($log, 'https://configurador.empresa.test/restablecer?token=')) && eq(false, str_contains($log, 'atacante.test'));
+});
 check('correo desconocido: no se envía nada ni se dice', function () use ($mailLog) {
     $before = strlen($mailLog());
     password_reset_request('nadie@x.test');

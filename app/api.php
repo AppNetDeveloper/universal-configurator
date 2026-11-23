@@ -83,6 +83,7 @@ function module_types_for_node(int $nodeId): array
 function api_handle(string $method, string $path): void
 {
     session_start_safe();
+    security_session_check(); // una sesión caducada tampoco vale por la API
     if ($method === 'GET') {
         $body = $_GET;
     } else {

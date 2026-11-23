@@ -151,6 +151,24 @@ check_error('no se acepta una configuración vacía', function () use ($c, $va) 
     config_accept($e['code'], $va);
 }, 'módulo');
 
+// --- anular (admin)
+check('anular un borrador congela sus precios (las líneas no se quedan sin precio)', function () use ($c, $va, $vadmin) {
+    $d = config_create($c['blanco'], $va);
+    $r = config_cancel($d['code'], $vadmin);
+    q('UPDATE price_tiers SET price = price + 100');
+    $after = config_get($d['code'], $vadmin);
+    return eq('cancelled', $r['status']) && eq($d['total_cents'], $after['total_cents']) && eq(true, $after['walls'][0]['items'][0]['price_cents'] !== null)
+        && eq($d['walls'][0]['items'][0]['price_cents'], $after['walls'][0]['items'][0]['price_cents']);
+});
+check_error('un comercial no anula', fn() => config_cancel(config_create($c['blanco'], $va)['code'], $va), 'administrador');
+check('el invitado tiene un límite de borradores por conexión', function () use ($c) {
+    q("DELETE FROM throttle");
+    $g = ['kind' => 'guest', 'codes' => []];
+    for ($i = 0; $i < 30; $i++) config_create($c['blanco'], $g);
+    try { config_create($c['blanco'], $g); } catch (UcError $e) { q("DELETE FROM throttle"); return eq(429, $e->status); }
+    throw new RuntimeException('no limitó');
+});
+
 // --- exportación
 check('CSV: una fila por módulo, separador ; y fórmulas neutralizadas', function () use ($c, $va) {
     $x = config_create($c['blanco'], $va);

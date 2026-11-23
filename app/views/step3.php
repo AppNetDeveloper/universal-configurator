@@ -40,7 +40,7 @@ $draft = $cfg['status'] === 'draft';
     <p class="fine"><?= te('Precios sin IVA. El IVA se muestra aparte a título informativo. Aquí no se paga nada.') ?></p>
     <?php if ($draft): ?>
       <?php if (!$cfg['valid']): ?>
-        <p class="flash flash-error"><?= te('Hay medidas sin tramo: corrígelas antes de aceptar.') ?></p>
+        <p class="flash flash-error"><?= $cfg['count'] === 0 ? te('No hay ningún módulo: añade al menos uno antes de aceptar.') : te('Hay medidas sin tramo: corrígelas antes de aceptar.') ?></p>
         <a class="btn btn-ghost btn-block" href="/configurar/<?= e($cfg['code']) ?>">← <?= te('Volver a los módulos') ?></a>
       <?php else: ?>
       <form method="post" action="/configurar/<?= e($cfg['code']) ?>/aceptar" class="stack">

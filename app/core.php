@@ -200,7 +200,7 @@ function settings_defaults(): array
         'permitir_registro' => '0', 'permitir_invitado' => '0',
         'mail_transport' => 'mail',  // mail | smtp | log (log = data/mail.log, para pruebas)
         'mail_from' => '', 'smtp_host' => '', 'smtp_port' => '587', 'smtp_encryption' => 'tls', 'smtp_username' => '', 'smtp_password' => '',
-        'bionicadri_url' => '', 'bionicadri_client_id' => '',
+        'bionicadri_url' => '', 'bionicadri_client_id' => '', 'url_publica' => '',
     ];
 }
 
@@ -328,6 +328,16 @@ function base_url(): string
 {
     $host = preg_replace('/[^a-zA-Z0-9.:\[\]-]/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
     return (is_https() ? 'https' : 'http') . '://' . $host;
+}
+
+/**
+ * Dirección pública de la aplicación para enlaces que salen fuera (correos, vuelta de OAuth, MCP). Se guarda al
+ * instalar y se cambia en Ajustes; nunca se toma de la cabecera Host si está guardada (un Host falso no cuela un enlace).
+ */
+function public_url(): string
+{
+    $u = rtrim(setting('url_publica'), '/');
+    return $u !== '' ? $u : base_url();
 }
 
 function request_header(string $name): ?string

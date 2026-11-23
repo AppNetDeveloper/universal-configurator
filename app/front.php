@@ -148,12 +148,12 @@ function front_handle(string $path, string $method): void
         return;
     }
     if ($path === '/auth/bionicadri') {
-        try { redirect(auth_provider('bionicadri')->authorizeUrl(base_url() . '/auth/bionicadri/callback')); }
+        try { redirect(auth_provider('bionicadri')->authorizeUrl(public_url() . '/auth/bionicadri/callback')); }
         catch (UcError $ex) { render('message', ['title' => t('No disponible'), 'message' => $ex->getMessage()], 404); return; }
     }
     if ($path === '/auth/bionicadri/callback') {
         try {
-            $usr = auth_provider('bionicadri')->callback($_GET, base_url() . '/auth/bionicadri/callback');
+            $usr = auth_provider('bionicadri')->callback($_GET, public_url() . '/auth/bionicadri/callback');
             redirect(is_admin($usr) ? '/admin' : '/configurar');
         } catch (UcError $ex) { flash($ex->getMessage(), 'error'); redirect('/'); }
     }

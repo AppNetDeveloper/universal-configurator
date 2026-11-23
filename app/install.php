@@ -59,7 +59,9 @@ function uc_install(array $in): int
     try {
         migrate();
         Actor::set('instalador');
-        settings_save(['empresa' => mb_substr($empresa, 0, 120)]);
+        $url = rtrim(trim((string) ($in['url'] ?? '')), '/') ?: (PHP_SAPI === 'cli' ? '' : base_url());
+        if ($url !== '' && !preg_match('#^https?://[^\s/]+$#', $url)) throw new UcError(t('Dirección pública no válida: «{v}» (ej. https://configurador.miempresa.com).', ['v' => $url]));
+        settings_save(['empresa' => mb_substr($empresa, 0, 120), 'url_publica' => $url]);
         $id = user_create((string) $in['admin_email'], trim((string) ($in['admin_name'] ?? '')) ?: 'Administrador', 'admin', (string) $in['admin_password']);
         if (!empty($in['sample'])) seed_sample();
         audit('install', 'Universal Configurator ' . UC_VERSION);

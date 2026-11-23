@@ -178,7 +178,7 @@ function password_reset_create(int $userId, int $ttl = RESET_TTL): string
 
 function reset_link(string $raw): string
 {
-    return base_url() . '/restablecer?token=' . rawurlencode($raw);
+    return public_url() . '/restablecer?token=' . rawurlencode($raw);
 }
 
 /** «Olvidé mi contraseña»: siempre la misma respuesta, exista o no la cuenta. */

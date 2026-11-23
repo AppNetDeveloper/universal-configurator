@@ -66,6 +66,7 @@ function config_create(int $nodeId, ?array $viewer): array
     if ($viewer === null) throw new UcError(t('Entra con tu cuenta (o como invitado, si se permite) para configurar.'), [], 401);
     $node = node_get($nodeId);
     if (!$node || !node_branch_active($nodeId)) throw new UcError(t('El nodo {id} no existe o no está disponible.', ['id' => $nodeId]), [], 404);
+    if ($viewer['kind'] === 'guest' && !throttle('guest-create:' . client_ip(), 30, 3600)) throw new UcError(t('Demasiadas configuraciones nuevas desde esta conexión. Prueba dentro de un rato.'), [], 429);
     if (!node_is_final($nodeId)) {
         $kids = implode(', ', array_map(fn($k) => "{$k['id']} ({$k['name']})", node_children($nodeId)));
         throw new UcError(t('«{n}» no es un nodo final: elige uno de sus hijos: {hijos}.', ['n' => $node['name'], 'hijos' => $kids]));
@@ -403,24 +404,35 @@ function config_accept(string $code, ?array $viewer, array $customer = [], bool 
         if ($cust['customer_name'] === '' || $cust['customer_email'] === '' || $cust['customer_phone'] === '') throw new UcError(t('Para aceptar escribe tu nombre, tu correo y tu teléfono.'));
         if (!$consent) throw new UcError(t('Para aceptar marca la casilla de protección de datos.'));
     }
-    $p = precio_configuracion((int) $cfg['node_id'], config_walls_input((int) $cfg['id']));
-    if ($p['count'] === 0) throw new UcError(t('La configuración no tiene ningún módulo: añade al menos uno antes de aceptar.'));
-    if (!$p['valid']) {
-        $bad = [];
-        foreach ($p['walls'] as $w) foreach ($w['items'] as $it) if (!$it['valid']) $bad[] = t('línea {id}: {e}', ['id' => $it['id'], 'e' => $it['error']]);
-        throw new UcError(t('No se puede aceptar: hay medidas sin tramo. {lista}', ['lista' => implode(' · ', $bad)]));
-    }
-    tx(function () use ($cfg, $p, $cust, $consent) {
-        foreach ($p['walls'] as $w) foreach ($w['items'] as $it) {
-            update('config_items', ['tier_from_cm' => $it['tier_from_cm'], 'tier_to_cm' => $it['tier_to_cm'], 'price' => $it['price']], 'id = ?', [$it['id']]);
+    $p = tx(function () use ($cfg, $cust, $consent) {
+        $p = precio_configuracion((int) $cfg['node_id'], config_walls_input((int) $cfg['id']));
+        if ($p['count'] === 0) throw new UcError(t('La configuración no tiene ningún módulo: añade al menos uno antes de aceptar.'));
+        if (!$p['valid']) {
+            $bad = [];
+            foreach ($p['walls'] as $w) foreach ($w['items'] as $it) if (!$it['valid']) $bad[] = t('línea {id}: {e}', ['id' => $it['id'], 'e' => $it['error']]);
+            throw new UcError(t('No se puede aceptar: hay medidas sin tramo. {lista}', ['lista' => implode(' · ', $bad)]));
         }
-        $n = q("UPDATE configurations SET status = 'accepted', total = ?, tax_rate = ?, accepted_at = ?, updated_at = ?, consent_at = ?,
-            customer_name = ?, customer_email = ?, customer_phone = ? WHERE id = ? AND status = 'draft'",
-            [$p['total'], $p['tax_rate'], now(), now(), $consent ? now() : null, mb_substr($cust['customer_name'], 0, 160), mb_substr($cust['customer_email'], 0, 160), mb_substr($cust['customer_phone'], 0, 160), $cfg['id']])->rowCount();
-        if ($n !== 1) throw new UcError(t('La configuración {c} ya no es un borrador.', ['c' => $cfg['code']]), [], 409);
+        config_freeze((int) $cfg['id'], $p, 'accepted', ['accepted_at' => now(), 'consent_at' => $consent ? now() : null,
+            'customer_name' => mb_substr($cust['customer_name'], 0, 160), 'customer_email' => mb_substr($cust['customer_email'], 0, 160), 'customer_phone' => mb_substr($cust['customer_phone'], 0, 160)]);
+        return $p;
     });
     audit('config.accept', $cfg['code'] . ' · ' . money($p['total']) . ' · ' . viewer_label($viewer));
     return config_get($code, $viewer);
+}
+
+/**
+ * Escribe la foto del precio (tramo y precio por línea, total e IVA) y cambia el estado, solo si sigue en borrador.
+ * La usan aceptar y anular: una sola forma de congelar.
+ */
+function config_freeze(int $configId, array $p, string $status, array $extra = []): void
+{
+    foreach ($p['walls'] as $w) foreach ($w['items'] as $it) {
+        update('config_items', ['tier_from_cm' => $it['tier_from_cm'], 'tier_to_cm' => $it['tier_to_cm'], 'price' => $it['price']], 'id = ?', [$it['id']]);
+    }
+    $data = ['status' => $status, 'total' => $p['total'], 'tax_rate' => $p['tax_rate'], 'updated_at' => now()] + $extra;
+    $set = implode(', ', array_map(fn($k) => "$k = ?", array_keys($data)));
+    $n = q("UPDATE configurations SET $set WHERE id = ? AND status = 'draft'", [...array_values($data), $configId])->rowCount();
+    if ($n !== 1) throw new UcError(t('La configuración ya no es un borrador.'), [], 409);
 }
 
 /** Anular (solo admin). */
@@ -429,8 +441,14 @@ function config_cancel(string $code, ?array $viewer): array
     $cfg = config_find($code, $viewer);
     if (($viewer['user']['role'] ?? '') !== 'admin') throw new UcError(t('Solo un administrador puede anular configuraciones.'), [], 403);
     if ($cfg['status'] === 'cancelled') return config_get($code, $viewer);
-    if ($cfg['status'] === 'draft') config_touch((int) $cfg['id']);
-    update('configurations', ['status' => 'cancelled', 'updated_at' => now()], 'id = ?', [$cfg['id']]);
+    tx(function () use ($cfg) {
+        if ($cfg['status'] === 'draft') {
+            // Un borrador anulado guarda la foto de cómo estaba (las medidas sin tramo quedan sin precio).
+            config_freeze((int) $cfg['id'], precio_configuracion((int) $cfg['node_id'], config_walls_input((int) $cfg['id'])), 'cancelled');
+        } else {
+            update('configurations', ['status' => 'cancelled', 'updated_at' => now()], 'id = ?', [$cfg['id']]);
+        }
+    });
     audit('config.cancel', $cfg['code']);
     return config_get($code, $viewer);
 }
