@@ -46,7 +46,11 @@ php bin/uc reset-link --email=persona@miempresa.com                          # e
 
 **Para desarrollar**: `php -S 127.0.0.1:8190 -t public public/index.php`.
 
-Después de instalar, en **Panel → Ajustes**: dirección pública (la de los enlaces de los correos), IVA (solo se
+La **URL pública** es obligatoria al instalar (el instalador web propone la dirección actual para que la confirmes):
+es la única base de los enlaces que salen por correo y de la vuelta de BionicEye. Nunca se toma de la cabecera `Host`
+de la petición; si falta, no se envía ningún enlace y el panel avisa.
+
+Después de instalar, en **Panel → Ajustes**: dirección pública, IVA (solo se
 muestra aparte), registro libre de clientes, configurar sin cuenta (invitado), y el correo (`mail()`, SMTP o «solo
 registrar» en `data/mail.log` para pruebas). En **Panel → Personas** se dan de alta los comerciales: les llega el
 enlace para poner su contraseña (y el panel lo enseña por si el correo no sale).
