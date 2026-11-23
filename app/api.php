@@ -19,6 +19,16 @@ declare(strict_types=1);
  *   POST /api/configurations/{code}/duplicate
  */
 
+/** La pantalla no necesita el despiece de cada línea (lo usa el panel y el MCP): fuera, para que cada respuesta pese poco. */
+function api_lean(array $res): array
+{
+    if (isset($res['config']['walls'])) {
+        foreach ($res['config']['walls'] as &$w) foreach ($w['items'] as &$it) unset($it['parts']);
+        unset($w, $it);
+    }
+    return $res;
+}
+
 /** @return array{0:int, 1:array} [estado HTTP, cuerpo] */
 function api_dispatch(string $method, string $path, array $body, ?string $csrf): array
 {
@@ -105,5 +115,6 @@ function api_handle(string $method, string $path): void
         if (!is_array($body)) { json_response(['ok' => false, 'error' => t('JSON no válido.')], 400); return; }
     }
     [$status, $out] = api_dispatch($method, $path, $body, request_header('X-CSRF-Token'));
+    $out = api_lean($out);
     json_response($out, $status);
 }

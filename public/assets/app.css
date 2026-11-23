@@ -217,6 +217,7 @@ tr.is-invalid td { background: var(--err-soft); }
 /* Paso 2: esquema + tarjetas compactas */
 .cfg-head { margin-bottom: var(--space-3); }
 .cfg-head h1 { margin-bottom: 2px; }
+.code-tag { font-size: .8rem; color: var(--muted); font-weight: 500; letter-spacing: 0; vertical-align: middle; }
 .how summary { font-weight: 500; color: var(--text-2); font-size: .9rem; list-style: none; padding: 4px 0; }
 .how summary::-webkit-details-marker { display: none; }
 .how summary::after { content: " ▾"; color: var(--accent); }
@@ -456,6 +457,23 @@ body:not(:has(.totalbar)) .foot { padding-bottom: var(--space-5); }
   .undo-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .save-state:not(.is-error) { display: none; }
   .mod-quick { padding-left: 12px; }
+  .steps { margin-bottom: 8px; }
+  .step a, .step > span { gap: 4px; padding: 2px 0; min-height: 26px; }
+  .step .lbl { font-size: .72rem; }
+  .cfg-head { margin-bottom: 4px; }
+  .cfg-head h1 { font-size: 1.2rem; }
+  .how summary { font-size: .82rem; padding: 2px 0; min-height: 0; }
+  .cfg2 { gap: 10px; }
+  .plan { padding-top: 6px; padding-bottom: 6px; gap: 4px; }
+  .plan-row { height: 26px; }
+  .mods { gap: var(--space-4); }
+  .wall-head { margin-bottom: 4px; }
+  .mod-head { padding: 6px 10px 0; grid-template-columns: 36px minmax(0, 1fr) auto 12px; }
+  .mod-ico-wrap { width: 36px; height: 36px; }
+  .mod-ico { width: 26px; height: 26px; }
+  .mod-quick { padding: 4px 10px 6px; }
+  .stepper { height: 40px; }
+  .btn-add { min-height: 42px; margin-top: 6px; }
   .mainnav a, .linkbtn { padding: 0 8px; font-size: .86rem; }
   .tree .tree { padding-left: 10px; margin-left: 6px; }
   .tree-row { gap: 6px; min-width: 0; }
