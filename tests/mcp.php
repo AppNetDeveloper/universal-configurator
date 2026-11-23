@@ -66,6 +66,16 @@ check('config_accept avisa en su descripción de que lo confirma la persona', fu
     $tools = array_column(((array) $rpc($tAdminRW, 'tools/list')['result'])['tools'], 'description', 'name');
     return eq(true, str_contains($tools['config_accept'], 'la debe confirmar la persona'));
 });
+check('config_accept se declara irreversible (destructiveHint y mcpu/effects) para que la IA pida el sí; el resto no', function () use ($rpc, $tAdminRW) {
+    $tools = array_column(((array) $rpc($tAdminRW, 'tools/list')['result'])['tools'], null, 'name');
+    $acc = $tools['config_accept'];
+    $upd = $tools['config_update'];
+    return eq(true, $acc['annotations']['destructiveHint'])
+        && eq(['irreversible'], $acc['_meta']['mcpu/effects'] ?? null)
+        && eq(false, $upd['annotations']['destructiveHint'])
+        && eq(false, isset($upd['_meta']['mcpu/effects']))
+        && eq(true, $tools['config_get']['annotations']['readOnlyHint']);
+});
 check('método desconocido: -32601', fn() => eq(-32601, $rpc($tAna, 'nada/raro')['error']['code']));
 check('lote de 2 peticiones', function () use ($tAna) {
     [$s, $b] = mcp_process("Bearer $tAna", json_enc([['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'], ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']]));

@@ -185,6 +185,8 @@ function mcp_tools(): array
         'config_accept' => [
             'description' => 'ESCRIBE. Úsala solo cuando la persona haya confirmado expresamente, tras ver el total, que acepta: acepta un borrador y congela su precio y su despiece; después ya no se edita. AVISO: la aceptación la debe confirmar la persona.',
             'scope' => 'write', 'inputSchema' => $obj(['code' => $code], ['code']), 'example' => ['code' => 'UC-7K3F9QXM'],
+            // Irreversible: congela precio y despiece. Se publica (destructiveHint + mcpu/effects) para que la IA pida el sí.
+            'effects' => ['irreversible'],
             'handler' => fn(array $a) => ['config' => config_accept((string) $a['code'], mcp_viewer()),
                 'note' => t('Aceptada y con el precio y el despiece congelados. Confirma a la persona el código y el total; para cambiarla habrá que duplicarla.')],
         ],
@@ -260,8 +262,13 @@ function mcp_tools_for_token(): array
     $out = [];
     foreach (mcp_tools() as $name => $t) {
         if (!mcp_tool_allowed($t)) continue;
-        $out[] = ['name' => $name, 'description' => $t['description'], 'inputSchema' => $t['inputSchema'],
-            'annotations' => ['readOnlyHint' => $t['scope'] === 'read', 'destructiveHint' => false, 'idempotentHint' => $t['scope'] === 'read']];
+        $effects = $t['effects'] ?? [];
+        $tool = ['name' => $name, 'description' => $t['description'], 'inputSchema' => $t['inputSchema'],
+            'annotations' => ['readOnlyHint' => $t['scope'] === 'read', 'destructiveHint' => in_array('irreversible', $effects, true),
+                'idempotentHint' => $t['scope'] === 'read']];
+        // Convención de MCP Universal (`_meta["mcpu/effects"]` ⊂ money, third_party, irreversible, bulk): la IA pide el sí.
+        if ($effects) $tool['_meta'] = ['mcpu/effects' => $effects];
+        $out[] = $tool;
     }
     return $out;
 }

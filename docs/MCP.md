@@ -25,6 +25,9 @@ respuestas.
   - `write`: además `config_create`, `config_update` y `config_accept`.
   - Con un token `read`, las herramientas que escriben ni aparecen en `tools/list`.
 
+
+> `config_accept` se publica como **irreversible** (`annotations.destructiveHint: true` y `_meta["mcpu/effects"]: ["irreversible"]`): una IA que respete esas marcas (ADRI lo hace) pide el «sí» de la persona antes de llamarla.
+
 ## Flujo recomendado
 
 ```
