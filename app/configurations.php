@@ -228,7 +228,7 @@ function config_view(array $cfg): array
                 'width_cm' => $it['width_cm'], 'width_text' => cm_text((int) $it['width_mm']),
                 'valid' => $it['valid'], 'tier_from_cm' => $it['tier_from_cm'], 'tier_to_cm' => $it['tier_to_cm'],
                 'tier_from_mm' => $it['tier_from_mm'], 'tier_to_mm' => $it['tier_to_mm'],
-                'tier_text' => $it['valid'] ? cm_text($it['tier_from_mm']) . '–' . cm_text($it['tier_to_mm']) . ' cm' : null,
+                'tier_text' => $it['valid'] ? ($it['tier_from_mm'] === $it['tier_to_mm'] ? cm_text($it['tier_from_mm']) : cm_text($it['tier_from_mm']) . '–' . cm_text($it['tier_to_mm'])) . ' cm' : null,
                 'tier_rule' => $it['tier_rule'] ?? null, 'tier_note' => $it['tier_note'] ?? null,
                 'price' => eur($it['price']), 'price_cents' => $it['price'], 'price_text' => money($it['price']),
                 'tiers' => tiers_public($it['tiers']), 'error' => $it['error'] ?? null,

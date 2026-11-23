@@ -193,6 +193,10 @@ check('subir imagen de un nodo: PNG de verdad se guarda y se sirve sin ejecutar 
         && eq(303, $svg['status']) && eq(true, str_contains($after, 'Los SVG no se admiten')) && eq(true, str_contains($after, $m[1]))
         && eq(true, in_array($noCsrf['status'], [403, 419], true));
 });
+check('composición por defecto: solo ofrece los módulos de su familia', function () use ($adm) {
+    $p = $adm->get('/admin/composicion/2')['body'];
+    return eq(true, str_contains($p, 'Bajo 1 puerta (B1P)')) && eq(false, str_contains($p, 'Armario corredera')) && eq(false, str_contains($p, 'Columna de baño'));
+});
 check('/media no sirve nada fuera de su carpeta', fn() => eq(404, $adm->get('/media/../uc.sqlite')['status']) && eq(404, $adm->get('/media/abc.php')['status']));
 
 // --- alta de comerciales por invitación

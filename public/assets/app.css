@@ -93,10 +93,12 @@ legend { font-size: .9rem; font-weight: 600; color: var(--text-2); margin-bottom
 .w-expr { width: 150px; display: inline-block; } .w-expr-s { width: 70px; display: inline-block; }
 input.is-bad { border-color: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
 .table-scroll { overflow-x: auto; margin: 0 calc(-1 * clamp(16px, 2.4vw, 24px)); padding: 0 clamp(16px, 2.4vw, 24px); }
-.parts-edit { min-width: 1180px; }
-.parts-edit td, .parts-edit th { padding: 8px 6px; }
-.parts-edit input[name=name] { min-width: 170px; }
-.parts-edit select { min-width: 150px; width: auto; }
+.parts-edit { min-width: 1100px; }
+.table.parts-edit td, .table.parts-edit th { padding: 8px 5px; }
+.parts-edit select { min-width: 128px; width: auto; }
+.parts-edit .w-expr { width: 150px; } .parts-edit .w-xs { width: 60px; } .parts-edit .w-expr-s { width: 60px; } .parts-edit .w-xs2 { width: 64px; }
+.parts-edit input[name=name] { width: 140px; } .parts-edit select { min-width: 0; width: 116px; }
+.parts-edit [data-preview].num { white-space: normal; min-width: 104px; max-width: 120px; line-height: 1.3; }
 .parts-card { margin-top: var(--space-4); }
 .parts-edit tr.new-row td { background: var(--sunken); }
 .table.mini th, .table.mini td { padding: 6px 10px; font-size: .86rem; }
@@ -175,7 +177,7 @@ a.step:hover { border-color: var(--accent-line); color: var(--text); }
 .back-row { margin-top: var(--space-5); }
 
 /* Paso 1: nodos */
-.grid-nodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-4); }
+.grid-nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); }
 .grid-nodes.is-colors { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 .node-card-form { margin: 0; display: flex; }
 .node-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px; min-height: 150px; color: var(--text); text-decoration: none; font: inherit; cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .15s; }
@@ -292,8 +294,10 @@ body:not(:has(.totalbar)) .foot { padding-bottom: var(--space-5); }
   .totals { position: static; }
   .auth { grid-template-columns: 1fr; min-height: 0; }
 }
+.show-sm { display: none; }
 @media (max-width: 600px) {
   .hide-sm { display: none; }
+  .show-sm { display: block; margin-top: 4px; }
   .table th, .table td { padding: 10px 12px; }
   .steps { gap: 6px; }
   .step { padding: 8px; gap: 6px; min-height: 48px; }
@@ -309,5 +313,11 @@ body:not(:has(.totalbar)) .foot { padding-bottom: var(--space-5); }
   .mainnav a, .linkbtn { flex: none; padding: 0 10px; font-size: .9rem; min-height: 40px; }
   .mainnav form { flex: none; margin-left: auto; }
   .w-num { width: 76px; }
+  .mainnav a, .linkbtn { padding: 0 8px; font-size: .86rem; }
+  .tree .tree { padding-left: 10px; margin-left: 6px; }
+  .tree-row { gap: 6px; min-width: 0; }
+  .tree-row .node-ill, .tree .node-ill { width: 34px; } .tree-row .node-img, .tree .node-img { width: 34px; height: 22px; }
+  .tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-actions { flex: none; } .tree-actions .icon-btn { width: 34px; min-width: 34px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

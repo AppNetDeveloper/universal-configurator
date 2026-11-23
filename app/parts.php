@@ -12,6 +12,7 @@ declare(strict_types=1);
  */
 
 const GRAINS = ['' => 'Sin veta', 'largo' => 'Veta a lo largo', 'ancho' => 'Veta a lo ancho'];
+const GRAINS_SHORT = ['' => 'Sin veta', 'largo' => 'A lo largo', 'ancho' => 'A lo ancho']; // en la columna «Veta» del editor
 
 function module_parts_of(int $typeId): array
 {

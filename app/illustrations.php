@@ -34,6 +34,13 @@ function shade(string $hex, float $f): string
     return sprintf('#%02X%02X%02X', ...$c);
 }
 
+/** Luminancia relativa (0 negro … 1 blanco) de un #RRGGBB. */
+function luminance(string $hex): float
+{
+    [$r, $g, $b] = array_map(fn($v) => hexdec($v) / 255, str_split(ltrim($hex, '#'), 2));
+    return 0.2126 * $r + 0.7152 * $g + 0.0722 * $b;
+}
+
 function illustration_svg(string $kind, string $hex): string
 {
     if (!isset(ILLUSTRATIONS[$kind]) || !preg_match('/^#[0-9a-fA-F]{6}$/', $hex)) return '';
@@ -41,7 +48,7 @@ function illustration_svg(string $kind, string $hex): string
     $front = $hex;
     $edge = shade($hex, 0.72);
     $line = '#94A3B8';
-    $ink = '#334155';
+    $ink = luminance($hex) < 0.32 ? '#E2E8F0' : '#334155'; // tiradores visibles también en acabados oscuros
     $wall = '#F1F5F9';
     $top = '#CBD5E1';
     $body = match ($kind) {

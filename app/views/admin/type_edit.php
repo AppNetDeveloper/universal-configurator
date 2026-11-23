@@ -88,7 +88,7 @@ foreach ($tiers as $tr) $groups[$tr['node_id'] === null ? 0 : (int) $tr['node_id
             <td><input form="<?= $fid ?>" name="thickness" value="<?= e($pt['thickness_expr']) ?>" class="w-expr-s mono" data-expr="thickness" aria-label="<?= te('Espesor') ?>"></td>
             <td><input form="<?= $fid ?>" name="length_expr" value="<?= e($pt['length_expr']) ?>" class="w-expr mono" data-expr="length_expr" aria-label="<?= te('Largo') ?>"></td>
             <td><input form="<?= $fid ?>" name="width_expr" value="<?= e($pt['width_expr']) ?>" class="w-expr mono" data-expr="width_expr" aria-label="<?= te('Ancho') ?>"></td>
-            <td><select form="<?= $fid ?>" name="grain" aria-label="<?= te('Veta') ?>"><?php foreach (GRAINS as $g => $gl): ?><option value="<?= e($g) ?>"<?= $pt['grain'] === $g ? ' selected' : '' ?>><?= te($gl) ?></option><?php endforeach; ?></select></td>
+            <td><select form="<?= $fid ?>" name="grain" aria-label="<?= te('Veta') ?>"><?php foreach (GRAINS_SHORT as $g => $gl): ?><option value="<?= e($g) ?>"<?= $pt['grain'] === $g ? ' selected' : '' ?>><?= te($gl) ?></option><?php endforeach; ?></select></td>
             <td><input form="<?= $fid ?>" name="edge_banding" value="<?= e($pt['edge_banding']) ?>" class="w-xs2" aria-label="<?= te('Canto') ?>"></td>
             <td class="r num small" data-preview><?php if ($pv && $pv['error'] === null): ?><?= (int) $pv['qty'] ?> × <?= e(mm_text($pv['thickness_mm'])) ?> · <?= e(mm_text($pv['length_mm'])) ?> × <?= e(mm_text($pv['width_mm'])) ?> mm<?php elseif ($pv): ?><span class="line-error"><?= e($pv['error']) ?></span><?php endif; ?></td>
             <td class="r nowrap">
@@ -103,7 +103,7 @@ foreach ($tiers as $tr) $groups[$tr['node_id'] === null ? 0 : (int) $tr['node_id
             <td><input form="ptnew" name="thickness" value="<?= e(old('thickness', 'T')) ?>" class="w-expr-s mono" data-expr="thickness" aria-label="<?= te('Espesor') ?>"></td>
             <td><input form="ptnew" name="length_expr" required placeholder="H" value="<?= e(old('length_expr')) ?>" class="w-expr mono" data-expr="length_expr" aria-label="<?= te('Largo') ?>"></td>
             <td><input form="ptnew" name="width_expr" required placeholder="D" value="<?= e(old('width_expr')) ?>" class="w-expr mono" data-expr="width_expr" aria-label="<?= te('Ancho') ?>"></td>
-            <td><select form="ptnew" name="grain" aria-label="<?= te('Veta') ?>"><?php foreach (GRAINS as $g => $gl): ?><option value="<?= e($g) ?>"><?= te($gl) ?></option><?php endforeach; ?></select></td>
+            <td><select form="ptnew" name="grain" aria-label="<?= te('Veta') ?>"><?php foreach (GRAINS_SHORT as $g => $gl): ?><option value="<?= e($g) ?>"><?= te($gl) ?></option><?php endforeach; ?></select></td>
             <td><input form="ptnew" name="edge_banding" class="w-xs2" placeholder="1L" aria-label="<?= te('Canto') ?>"></td>
             <td class="r num small" data-preview></td>
             <td class="r"><form id="ptnew" method="post" action="/admin/tipos/<?= (int) $type['id'] ?>/pieza" class="inline"><?= csrf_field() ?><button class="btn btn-primary btn-sm" type="submit">+ <?= te('Añadir') ?></button></form></td>

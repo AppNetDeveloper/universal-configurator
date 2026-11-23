@@ -103,8 +103,15 @@ function admin_handle(string $path, string $method): void
             }
             unset($w);
             $inherited = layout_for($nid);
+            // solo los tipos que tienen tramos para este nodo (los de su familia) y, por si acaso, los que ya usa
+            $types = module_types_for_node($nid);
+            $have = array_column($types, 'id');
+            foreach ($walls as $w) foreach ($w['modules'] as $md) if (!in_array((int) $md['module_type_id'], $have, true)) {
+                $t = module_type_get((int) $md['module_type_id']);
+                if ($t) { $types[] = ['id' => (int) $t['id'], 'name' => $t['name'] . ' · ' . t('sin tramos aquí'), 'ref' => $t['ref']]; $have[] = (int) $t['id']; }
+            }
             admin_render('layout_edit', '/catalogo', ['title' => t('Composición de {n}', ['n' => $node['name']]), 'node' => $node, 'path' => node_path($nid), 'walls' => $walls,
-                'inheritedFrom' => !$walls && $inherited['node_id'] ? node_get($inherited['node_id']) : null, 'types' => module_types_all(), 'isFinal' => node_is_final($nid)]);
+                'inheritedFrom' => !$walls && $inherited['node_id'] ? node_get($inherited['node_id']) : null, 'types' => $types, 'isFinal' => node_is_final($nid)]);
             return;
         }
         if ($post && $match('/composicion/(\d+)/(pared|modulo)(?:/(\d+))?(?:/(borrar|mover))?')) {
