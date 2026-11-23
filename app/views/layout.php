@@ -10,6 +10,7 @@ $logo = setting('logo');
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#ffffff">
 <title><?= e(($title !== '' ? $title . ' · ' : '') . $empresa) ?></title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="<?= e(asset('/assets/app.css')) ?>">
 <script src="<?= e(asset('/assets/app.js')) ?>" defer></script>
 </head>

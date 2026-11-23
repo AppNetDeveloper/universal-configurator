@@ -7,6 +7,7 @@ $v = fn(string $k, string $d = '') => e((string) ($values[$k] ?? $d));
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title><?= te('Instalar Universal Configurator') ?></title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="<?= e(asset('/assets/app.css')) ?>">
 </head>
 <body>
