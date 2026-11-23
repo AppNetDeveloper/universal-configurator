@@ -267,6 +267,87 @@ check('MCP por HTTP: config_get de la de Ana con su token', function () use ($mc
 });
 check('el registro de actividad recoge el uso del MCP', fn() => eq(true, str_contains($adm->get('/admin/actividad')['body'], 'MCP: ADRI de Ana')));
 
+// --- panel: cada formulario hace lo que dice
+$idFrom = function (string $html, string $re) { if (!preg_match($re, $html, $m)) throw new RuntimeException("no encontrado: $re"); return (int) $m[1]; };
+$armario = 0;
+check('panel: crear, editar y desactivar un nodo', function () use ($adm, $adminCsrf, $idFrom, &$armario) {
+    $adm->post('/admin/catalogo/crear', ['_csrf' => $adminCsrf, 'name' => 'Armario', 'description' => 'A medida']);
+    $armario = $idFrom($adm->get('/admin/catalogo')['body'], '#/admin/catalogo/(\d+)">Armario<#');
+    $adm->post("/admin/catalogo/$armario", ['_csrf' => $adminCsrf, 'name' => 'Armarios', 'slug' => '', 'description' => 'A medida', 'image' => '#AABBCC']);
+    $adm->post("/admin/catalogo/$armario/activar", ['_csrf' => $adminCsrf, 'back' => "/catalogo/$armario", 'active' => '']);
+    $p = $adm->get("/admin/catalogo/$armario")['body'];
+    $adm->post("/admin/catalogo/$armario/activar", ['_csrf' => $adminCsrf, 'back' => "/catalogo/$armario", 'active' => '1']);
+    return eq(true, str_contains($p, 'Armarios') && str_contains($p, 'Desactivado'));
+});
+$puerta = 0;
+check('panel: hijo, mover y borrar', function () use ($adm, $adminCsrf, $idFrom, &$armario, &$puerta) {
+    $adm->post('/admin/catalogo/crear', ['_csrf' => $adminCsrf, 'parent_id' => $armario, 'name' => 'Batiente']);
+    $adm->post('/admin/catalogo/crear', ['_csrf' => $adminCsrf, 'parent_id' => $armario, 'name' => 'Corredera']);
+    $p = $adm->get("/admin/catalogo/$armario")['body'];
+    $puerta = $idFrom($p, '#/admin/catalogo/(\d+)">Batiente<#');
+    $corr = $idFrom($p, '#/admin/catalogo/(\d+)">Corredera<#');
+    $r = $adm->post("/admin/catalogo/$corr/mover", ['_csrf' => $adminCsrf, 'dir' => '-1', 'back' => "/catalogo/$armario"]);
+    $p2 = $adm->get("/admin/catalogo/$armario")['body'];
+    $d = $adm->post("/admin/catalogo/$corr/borrar", ['_csrf' => $adminCsrf]);
+    return eq(303, $r['status']) && eq(true, strpos($p2, '>Corredera<') < strpos($p2, '>Batiente<'), 'Corredera subió') && eq(303, $d['status'])
+        && eq(false, str_contains($adm->get("/admin/catalogo/$armario")['body'], '>Corredera<'));
+});
+check('panel: tipo nuevo con su tramo; el tramo se ve', function () use ($adm, $adminCsrf, &$zap) {
+    $r = $adm->post('/admin/tipos/crear', ['_csrf' => $adminCsrf, 'name' => 'Zapatero', 'ref' => 'ZAP', 'family' => 'bajo', 'depth_mm' => '350']);
+    $tid = (int) basename(loc($r));
+    $GLOBALS['zap'] = $tid;
+    $adm->post("/admin/tipos/$tid/tramo", ['_csrf' => $adminCsrf, 'from_cm' => '40', 'to_cm' => '60', 'price' => '120,50', 'node_id' => '']);
+    $p = $adm->get("/admin/tipos/$tid")['body'];
+    return eq(true, $tid > 0) && eq(true, str_contains($p, 'value="120,50"'));
+});
+check('panel: composición con una pared; ancho sin tramo avisa y no se guarda', function () use ($adm, $adminCsrf, $idFrom, &$puerta) {
+    $adm->post("/admin/composicion/$puerta/pared", ['_csrf' => $adminCsrf, 'name' => 'Hueco', 'direction' => 'x', 'origin_x_mm' => '0', 'origin_y_mm' => '0']);
+    $p = $adm->get("/admin/composicion/$puerta")['body'];
+    $wid = $idFrom($p, "#/admin/composicion/$puerta/pared/(\d+)\"#");
+    $zap = $GLOBALS['zap'];
+    $adm->post("/admin/composicion/$puerta/modulo", ['_csrf' => $adminCsrf, 'wall_id' => $wid, 'module_type_id' => $zap, 'width_cm' => '90']);
+    $bad = $adm->get("/admin/composicion/$puerta")['body'];
+    $adm->post("/admin/composicion/$puerta/modulo", ['_csrf' => $adminCsrf, 'wall_id' => $wid, 'module_type_id' => $zap, 'width_cm' => '50']);
+    $good = $adm->get("/admin/composicion/$puerta")['body'];
+    return eq(true, str_contains($bad, 'no es una medida válida')) && eq(true, str_contains($good, '120,50 €'));
+});
+check('panel: el nodo nuevo se configura en la tablet con su composición', function () use ($ana, &$armario, &$puerta) {
+    $p = $ana->get('/configurar?nodo=' . $armario)['body'];
+    $r = $ana->post('/configurar', ['_csrf' => Browser::csrf($p), 'node_id' => $puerta]);
+    $cfg = $ana->api('GET', '/api/configurations/' . basename(loc($r)))['json']['config'];
+    return eq(true, str_contains($p, 'Batiente')) && eq(1, $cfg['count']) && eq('Zapatero', $cfg['walls'][0]['items'][0]['type_name']) && eq(120.5, $cfg['total']);
+});
+check('panel: ajustes (IVA) se guardan y se ven en el resumen', function () use ($adm, $adminCsrf) {
+    $r = $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '10', 'mail_transport' => 'log', 'smtp_port' => '587', 'url_publica' => $GLOBALS['BASE']]);
+    $p = $adm->get('/admin/ajustes')['body'];
+    $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '21', 'mail_transport' => 'log', 'smtp_port' => '587', 'url_publica' => $GLOBALS['BASE']]);
+    return eq(303, $r['status']) && eq(true, str_contains($p, 'name="iva" inputmode="decimal" value="10"'));
+});
+check('panel: ajuste no válido avisa y no se guarda', function () use ($adm, $adminCsrf) {
+    $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '150', 'mail_transport' => 'log']);
+    $p = $adm->get('/admin/ajustes')['body'];
+    return eq(true, str_contains($p, 'porcentaje entre 0 y 100') && str_contains($p, 'value="21"'));
+});
+check('panel: cambiar el rol de una persona', function () use ($adm, $adminCsrf, $idFrom) {
+    $p = $adm->get('/admin/usuarios')['body'];
+    $bid = $idFrom($p, '#value="Beto".*?action="/admin/usuarios/(\d+)"#s');
+    $adm->post("/admin/usuarios/$bid", ['_csrf' => $adminCsrf, 'name' => 'Beto', 'role' => 'cliente', 'active' => '1']);
+    $after = (string) $adm->get('/admin/usuarios')['body'];
+    $adm->post("/admin/usuarios/$bid", ['_csrf' => $adminCsrf, 'name' => 'Beto', 'role' => 'comercial', 'active' => '1']);
+    return eq(1, preg_match('#value="Beto".*?<option value="cliente" selected#s', $after));
+});
+check('panel: ver y anular una configuración', function () use ($adm, $adminCsrf, $code) {
+    $v = $adm->get("/admin/configuraciones/$code");
+    $adm->post("/admin/configuraciones/$code/anular", ['_csrf' => $adminCsrf]);
+    $after = $adm->get("/admin/configuraciones/$code")['body'];
+    return eq(200, $v['status']) && eq(true, str_contains($v['body'], 'avanza en x desde')) && eq(true, str_contains($after, 'badge-cancelled'));
+});
+check('panel: revocar el token deja el MCP en 401', function () use ($adm, $adminCsrf, $mcp, $idFrom, &$tokAna) {
+    $tid = $idFrom($adm->get('/admin/tokens')['body'], '#/admin/tokens/(\d+)/revocar#');
+    $adm->post("/admin/tokens/$tid/revocar", ['_csrf' => $adminCsrf]);
+    return eq(401, $mcp($tokAna, 'ping')['status']);
+});
+
 // --- salir
 check('salir cierra la sesión', function () use ($ana) {
     $ana->post('/salir', ['_csrf' => Browser::csrf($ana->get('/configurar')['body'])]);
