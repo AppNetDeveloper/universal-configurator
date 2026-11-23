@@ -64,7 +64,11 @@ function user_update(int $id, array $in): void
         throw new UcError(t('Es el único administrador activo: crea otro antes de quitarle el rol o desactivarlo.'));
     }
     if ($d) update('users', $d, 'id = ?', [$id]);
-    if ($deactivating) q('UPDATE users SET session_version = session_version + 1 WHERE id = ?', [$id]); // cierra sus sesiones
+    if ($deactivating || (isset($d['active']) && $d['active'] === 0)) {
+        // Cierra sus sesiones; una cuenta pendiente deja de estarlo y sus enlaces (verificación, restablecer) dejan de valer.
+        q('UPDATE users SET session_version = session_version + 1, pending_verification = 0 WHERE id = ?', [$id]);
+        q('DELETE FROM password_resets WHERE user_id = ?', [$id]);
+    }
     audit('user.update', $u['email'] . ' ' . json_enc($d));
 }
 
@@ -142,10 +146,15 @@ function login_attempt(string $email, string $password): array
     $u = user_by_email($email);
     $cookie = (string) ($_COOKIE[TRUST_COOKIE] ?? '');
     $cookieFor = $cookie !== '' ? trusted_device_user($cookie) : null;
-    $trusted = $u && $cookieFor === (int) $u['id'] && trusted_device_reserve($cookie, $mailHash);
-    $GLOBALS['uc_login_trusted'] = $trusted;
     $boKey = $mailHash . ':' . $ip;
-    $blocked = !throttle('login-ip:' . $ip, 20, 900) || !throttle('login-mailip:' . $mailHash . ':' . $ip, 5, 900);
+    // Primero los límites por IP: si la IP está bloqueada no se toca nada más (ni se gasta la reserva de la cookie).
+    if (!throttle('login-ip:' . $ip, 20, 900)) {
+        if (throttle('audit-throttled-ip:' . $ip, 1, 900)) audit('user.login_throttled', 'IP ' . $ip); // una fila por IP y ventana
+        throw new UcError(t('Demasiados intentos. Espera un poco y vuelve a probar (o restablece tu contraseña).'), [], 429);
+    }
+    $blocked = !throttle('login-mailip:' . $mailHash . ':' . $ip, 5, 900);
+    $trusted = !$blocked && $u && $cookieFor === (int) $u['id'] && trusted_device_reserve($cookie, $mailHash);
+    $GLOBALS['uc_login_trusted'] = $trusted;
     if (!$trusted) {
         $fails = row('SELECT hits, reset_at FROM throttle WHERE key = ?', ['login-fails:' . $mailHash]);
         $blocked = $blocked || ($fails && (int) $fails['reset_at'] >= time() && (int) $fails['hits'] >= LOGIN_FAIL_CAP);
@@ -324,8 +333,18 @@ function register_user(string $name, string $email): string
 }
 
 /** Los dos caminos del registro hacen el mismo trabajo: crear un token y enviar un correo. */
+/** Borra los registros libres que no se verificaron a tiempo (VERIFY_TTL) y no tienen configuraciones. */
+function purge_pending_registrations(): void
+{
+    $limit = date('Y-m-d H:i:s', time() - VERIFY_TTL);
+    q('DELETE FROM password_resets WHERE user_id IN (SELECT id FROM users WHERE pending_verification = 1 AND created_at < ?)', [$limit]);
+    q('DELETE FROM users WHERE pending_verification = 1 AND created_at < ? AND id NOT IN (SELECT user_id FROM configurations WHERE user_id IS NOT NULL)
+        AND id NOT IN (SELECT user_id FROM mcp_tokens WHERE user_id IS NOT NULL)', [$limit]);
+}
+
 function register_user_send(string $name, string $email): void
 {
+    purge_pending_registrations();
     if (public_url() === null) { audit('mail.no_public_url', "registro de $email: no enviado (falta la URL pública)"); return; }
     $empresa = mail_name(setting('empresa'));
     $existing = user_by_email($email);

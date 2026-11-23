@@ -188,7 +188,8 @@ check('el registro de actividad no crece con cada intento ya bloqueado (una fila
     $as('10.3.0.1');
     $before = (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'user.login_throttled'");
     for ($i = 0; $i < 30; $i++) $tryLogin('ana@x.test', 'mala');
-    return eq($before + 1, (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'user.login_throttled'"));
+    // una fila al bloquearse correo+IP y otra al bloquearse la IP; nunca una por intento
+    return eq($before + 2, (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'user.login_throttled'"));
 });
 $as('127.0.0.1');
 q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
@@ -362,5 +363,89 @@ check('apache.example: los comentarios van en su propia línea', function () {
 check_error('cadena de 150 signos menos: tope de anidamiento', fn() => expr_value(str_repeat('-', 150) . 'W', ['W' => 1]), 'anidad');
 check_error('producto que se dispara: resultado demasiado grande', fn() => expr_value('W*W*W*W*W*W', ['W' => 99999]), 'grande');
 check_error('INF/NAN no se cuelan', fn() => expr_value('INF + NAN', []), 'desconocida');
+
+// --- segunda revisión (23-nov)
+check('C: con la IP ya bloqueada, la cookie de confianza no gasta su presupuesto', function () {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    $_SERVER['REMOTE_ADDR'] = '10.30.0.1';
+    login_attempt('admin@x.test', 'secreta123'); session_logout();
+    $cookie = (string) $GLOBALS['uc_trust_cookie'];
+    for ($i = 0; $i < 20; $i++) { try { login_attempt("relleno$i@x.test", 'mala'); } catch (UcError) {} }
+    $_COOKIE['uc_trust'] = $cookie;
+    $before = (int) val('SELECT hits FROM throttle WHERE key = ?', ['trust-fails:' . hash('sha256', 'admin@x.test')]);
+    try { login_attempt('admin@x.test', 'mala'); } catch (UcError $e) { $st = $e->status; }
+    $after = (int) val('SELECT hits FROM throttle WHERE key = ?', ['trust-fails:' . hash('sha256', 'admin@x.test')]);
+    unset($_COOKIE['uc_trust']);
+    $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+    q('DELETE FROM throttle');
+    return eq(429, $st ?? 0) && eq($before, $after);
+});
+check('D1: una cuenta pendiente sin verificar no bloquea la entrada por BionicEye (la reclama)', function () {
+    settings_save(['permitir_registro' => '1', 'bionicadri_url' => 'https://be.cliente.test', 'bionicadri_client_id' => 'abc']);
+    q('DELETE FROM throttle');
+    register_user('Intruso', 'pepa@x.test');
+    $p = auth_provider('bionicadri');
+    $p->authorizeUrl('http://localhost/cb');
+    $p->http = fn($m, $url) => str_ends_with($url, '/oauth/token') ? ['access_token' => 'tk'] : ['id' => 501, 'email' => 'pepa@x.test', 'name' => 'Pepa'];
+    $u = $p->callback(['state' => $_SESSION['oauth']['bionicadri']['state'], 'code' => 'c'], 'http://localhost/cb');
+    session_logout();
+    settings_save(['permitir_registro' => '0', 'bionicadri_url' => '', 'bionicadri_client_id' => '']);
+    return eq('bionicadri', $u['auth_source']) && eq('501', $u['external_id']) && eq(0, (int) $u['pending_verification']) && eq(1, (int) $u['active'])
+        && eq(0, (int) val('SELECT COUNT(*) FROM password_resets WHERE user_id = ?', [$u['id']]));
+});
+check('D1: las cuentas pendientes caducadas se purgan', function () {
+    $id = user_create('vieja@x.test', 'Vieja', 'cliente', null);
+    q("UPDATE users SET active = 0, pending_verification = 1, created_at = datetime('now', '-2 days', 'localtime') WHERE id = ?", [$id]);
+    purge_pending_registrations();
+    return eq(null, user_by_id($id));
+});
+check('D2: desactivar una cuenta pendiente borra sus enlaces: el de verificación ya no la activa', function () use ($mailLog) {
+    settings_save(['permitir_registro' => '1']);
+    q('DELETE FROM throttle');
+    register_user('Lola', 'lola@x.test');
+    preg_match_all('#/restablecer\?token=([a-f0-9]+)#', $mailLog(), $m);
+    $tok = end($m[1]);
+    $u = user_by_email('lola@x.test');
+    user_update((int) $u['id'], ['active' => false]);
+    $err = null;
+    try { password_reset_consume($tok, 'clave-de-lola'); } catch (UcError $e) { $err = $e->status; }
+    settings_save(['permitir_registro' => '0']);
+    $after = user_by_email('lola@x.test');
+    return eq(410, $err) && eq(0, (int) $after['active']) && eq(0, (int) $after['pending_verification']);
+});
+check('E: muchos correos distintos desde una IP bloqueada: una sola fila de auditoría por IP y ventana', function () {
+    q('DELETE FROM throttle');
+    $_SERVER['REMOTE_ADDR'] = '10.40.0.1';
+    for ($i = 0; $i < 20; $i++) { try { login_attempt("a$i@x.test", 'mala'); } catch (UcError) {} }
+    $before = (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'user.login_throttled'");
+    for ($i = 0; $i < 30; $i++) { try { login_attempt("b$i@x.test", 'mala'); } catch (UcError) {} }
+    $after = (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'user.login_throttled'");
+    $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+    q('DELETE FROM throttle');
+    return eq(1, $after - $before);
+});
+check('E: la purga quita las esperas de login viejas', function () {
+    q("INSERT INTO login_backoff (key, fails, next_at, last_fail_at) VALUES ('viejo:1', 3, 0, ?)", [clock() - 7200]);
+    throttle_purge();
+    return eq(0, (int) val("SELECT COUNT(*) FROM login_backoff WHERE key = 'viejo:1'"));
+});
+check('F: CSV neutraliza fórmulas tras un salto de línea', function () {
+    $x = csv_cell("Ana\n=HYPERLINK(\"x\")");
+    $y = csv_cell("Ana\r+1");
+    return eq(true, str_contains($x, "\n'=HYPERLINK") && str_contains($y, "\r'+1"));
+});
+check('F: el nombre y el teléfono del cliente se guardan sin saltos de línea', function () use ($c, $admin) {
+    $v = ['kind' => 'user', 'user' => $admin];
+    $cfg = config_create($c['blanco'], $v, ['name' => "Ana\n=1+1", 'phone' => "600\r\n111"]);
+    return eq('Ana =1+1', $cfg['customer']['name']) && eq('600 111', $cfg['customer']['phone']);
+});
+check('cosmético: una fórmula enviada como lista es un error de validación, sin avisos de PHP', function () use ($c) {
+    $warn = null;
+    set_error_handler(function ($no, $msg) use (&$warn) { $warn = $msg; return true; });
+    try { module_part_save($c['bajo'], ['name' => 'X', 'qty' => 1, 'thickness' => 'T', 'length_expr' => ['W'], 'width_expr' => 'D']); $res = 'guardó'; }
+    catch (UcError $e) { $res = $e->getMessage(); }
+    finally { restore_error_handler(); }
+    return eq(null, $warn) && eq(true, str_contains($res, 'texto'));
+});
 
 done();

@@ -33,6 +33,7 @@ function part_vars(array $type, ?int $w = null, ?int $h = null, ?int $d = null):
 function module_part_save(int $typeId, array $in, ?int $id = null): int
 {
     $type = module_type_get($typeId) ?? throw new UcError(t('El tipo de módulo {id} no existe.', ['id' => $typeId]), [], 404);
+    if (!is_scalar($in['name'] ?? '') || !is_scalar($in['grain'] ?? '') || !is_scalar($in['edge_banding'] ?? '')) throw new UcError(t('Nombre, veta y canto de la pieza tienen que ser texto.'));
     $name = trim((string) ($in['name'] ?? ''));
     if ($name === '') throw new UcError(t('Escribe el nombre de la pieza (p. ej. «Lateral»).'));
     $qty = parse_int($in['qty'] ?? 1, t('Cantidad'), 1, 1000);
@@ -41,7 +42,9 @@ function module_part_save(int $typeId, array $in, ?int $id = null): int
     $vars = part_vars($type);
     $exprs = [];
     foreach (['thickness' => t('Espesor'), 'length_expr' => t('Largo'), 'width_expr' => t('Ancho')] as $k => $label) {
-        $src = trim((string) ($in[$k] ?? ($k === 'thickness' ? 'T' : '')));
+        $raw = $in[$k] ?? ($k === 'thickness' ? 'T' : '');
+        if (!is_scalar($raw)) throw new UcError(t('{campo} de «{p}» tiene que ser texto (una fórmula), no una lista.', ['campo' => $label, 'p' => $name]));
+        $src = trim((string) $raw);
         try {
             $val = expr_value($src, $vars);
         } catch (UcError $ex) {

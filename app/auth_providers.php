@@ -88,6 +88,19 @@ final class BionicAdriAuthProvider implements AuthProvider
 
         $u = row("SELECT * FROM users WHERE auth_source = 'bionicadri' AND external_id = ?", [$ext]);
         if (!$u) {
+            purge_pending_registrations();
+            $pending = user_by_email($email);
+            if ($pending && $pending['pending_verification']) {
+                // Un registro libre sin verificar no ocupa el correo: BionicEye ha demostrado que es suyo y lo reclama.
+                update('users', ['auth_source' => 'bionicadri', 'external_id' => $ext, 'password_hash' => null, 'active' => 1, 'pending_verification' => 0,
+                    'name' => mb_substr(trim((string) ($me['name'] ?? $pending['name'])), 0, 120)], 'id = ?', [$pending['id']]);
+                q('UPDATE users SET session_version = session_version + 1 WHERE id = ?', [$pending['id']]);
+                q('DELETE FROM password_resets WHERE user_id = ?', [$pending['id']]);
+                audit('user.bionicadri_reclaim', $email);
+            }
+            $u = row("SELECT * FROM users WHERE auth_source = 'bionicadri' AND external_id = ?", [$ext]);
+        }
+        if (!$u) {
             if (user_by_email($email)) throw new UcError(t('Ya existe una cuenta local con el correo {c}: pide al administrador que la enlace.', ['c' => $email]), [], 409);
             $u = user_by_id(user_create($email, (string) ($me['name'] ?? $email), 'cliente', null, 'bionicadri', $ext));
         }
