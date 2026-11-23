@@ -244,7 +244,7 @@ function now(): string
 
 function json_enc(mixed $v, bool $pretty = false): string
 {
-    $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR;
+    $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION;
     return json_encode($v, $pretty ? $flags | JSON_PRETTY_PRINT : $flags);
 }
 
