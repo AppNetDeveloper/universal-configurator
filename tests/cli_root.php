@@ -68,6 +68,14 @@ $d = $newData('install-root', 0);
 clearstatcache();
 check('install como root con data/ de root: se niega (no instala como root)', fn() => eq(true, $rc !== 0) && eq(false, is_file("$d/config.php")));
 
+// --- 3b. un servidor web que corre como root (p. ej. `php -S` en un contenedor) no lanza actualizaciones: nadie podría
+// terminarlas (root nunca termina una) y el configurador se quedaría en mantenimiento
+$p = proc_open([PHP_BINARY, '-r', 'require "app/bootstrap.php"; [$ok, $why] = update_can_write(); echo $ok ? "SI" : "NO: $why";'],
+    [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $repo, ['UC_DATA' => "$base/install", 'PATH' => getenv('PATH')]);
+$o = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+proc_close($p);
+check('como root, actualizar desde el panel se niega y dice por qué', fn() => eq(true, str_starts_with($o, 'NO:') && str_contains($o, 'root'), $o));
+
 // --- 4. las reglas de terminar una actualización, en el propio proceso
 $d = $newData('fn', 0);
 putenv("UC_DATA=$d");

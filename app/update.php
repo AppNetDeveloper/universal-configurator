@@ -163,6 +163,9 @@ function update_verify_envelope(string $raw, ?string $publicKey = null): array
 /** ¿Puede este proceso escribir el código? [bool, motivo]. */
 function update_can_write(): array
 {
+    // Como root no: root nunca termina una actualización (cargaría lo que el servidor web puede escribir) y se quedaría
+    // en mantenimiento. Pasa si el servidor web corre como root (p. ej. `php -S` en un contenedor).
+    if (uc_update_uid() === 0) return [false, t('Este proceso corre como root: no se actualiza así (no se podría terminar). Haz que el servidor web corra con su propio usuario (www-data) o actualiza con sudo ./install.sh de la versión nueva.')];
     foreach (['app', 'app/core.php', 'public', 'public/index.php', 'bin'] as $rel) {
         $f = UC_ROOT . '/' . $rel;
         if (file_exists($f) && !is_writable($f)) return [false, t('El servidor web no puede escribir en el código ({r}): así lo deja el instalador, por seguridad. Para actualizar, descarga la versión nueva (con su .sha256) y, desde su carpeta, ejecuta sudo ./install.sh: cambia el código y no toca los datos. Nunca ejecutes bin/uc como root.', ['r' => $rel])];
