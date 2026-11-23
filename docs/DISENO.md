@@ -1,4 +1,4 @@
-# Universal Configurator — diseño (v0.1)
+# Universal Configurator — diseño (v0.3)
 
 > Contrato para quien lo construye. Hermano de **Universal Web** (`/var/www/universal-web`): mismo estilo (PHP puro, sin
 > frameworks, sin Composer, sin Node, SQLite, panel propio, MCP propio, instalador), misma licencia (Licencia BionicAdri
@@ -62,7 +62,11 @@ price_tiers(id, module_type_id, node_id NULL, from_mm, to_mm, price, CHECK(from_
 layout_walls(id, node_id, name, direction CHECK(direction IN('x','y')), origin_x_mm, origin_y_mm, sort)
 default_modules(id, layout_wall_id, module_type_id, width_mm, sort)
 configurations(id, code UNIQUE, node_id, user_id NULL, customer_name, customer_email, customer_phone,
-      status CHECK(status IN('draft','accepted','cancelled')), total, tax_rate, notes, created_at, updated_at, accepted_at)
+      status CHECK(status IN('draft','requested','accepted','cancelled')), total, tax_rate, notes, created_at, updated_at,
+      accepted_at, requested_at, work_status NULL CHECK(work_status IN('nuevo','en_curso','hecho')), work_note, work_by, work_at)
+leads(id, configuration_id NULL, user_id NULL (el comercial de la configuración), name, email, phone, message, source,
+      consent_at, status CHECK(status IN('nuevo','contactado','cerrado')), work_status, work_note, work_by, work_at,
+      created_at, updated_at)
 config_walls(id, configuration_id, name, direction, origin_x_mm, origin_y_mm, sort)
 config_items(id, config_wall_id, module_type_id, width_mm, height_mm, depth_mm, sort, tier_from_mm, tier_to_mm, price)  -- tier/price: la foto
 config_item_parts(id, config_item_id, name, qty, thickness_mm, length_mm, width_mm, grain, edge_banding, sort)    -- despiece congelado
@@ -160,3 +164,45 @@ URL pública y un código de un solo uso que deja en `data/install-code.txt`) y 
 - Registro libre: solo nombre y correo, enlace de verificación de 24 h, mensaje genérico y tiempo mínimo uniforme;
   sin texto del usuario en los correos hacia un correo no verificado.
 - Los enlaces externos usan solo la URL pública guardada (nunca la cabecera `Host`).
+
+## v0.3: el cliente final, los leads, Adri, copias y actualizaciones
+
+Guía de producto (a quién, qué gratis y qué con Adri, reglas del móvil): [`PRODUCTO.md`](PRODUCTO.md). Manual de uso:
+[`MANUAL.md`](MANUAL.md).
+
+- **Quién acepta**: aceptar (cerrar la venta) es del comercial o del administrador, también por la API y por MCP. El
+  cliente (invitado o con cuenta) pide el presupuesto: «Quiero este presupuesto» deja nombre, teléfono, correo
+  opcional, un mensaje y el consentimiento; la configuración pasa a `requested` («Presupuesto pedido»: precio y
+  despiece congelados, ya no se edita) y se crea un **lead**. Aceptar una pedida no recalcula: se mantiene el precio
+  que vio el cliente. Contra abusos: campo trampa (honeypot), 5 peticiones por conexión y hora.
+- **«Guárdala»**: si el cliente deja su correo, recibe el enlace de solo lectura (cuerpo sin nada escrito por él;
+  3 al día por dirección). **«Envíamela por WhatsApp»**: enlace `/ver/{código}.{caducidad}.{firma}` (HMAC con la clave
+  de la instalación, 30 días, siempre con la URL pública, sin datos personales ni en la URL ni en la página;
+  `noindex` y `Referrer-Policy: no-referrer`; una anulada lo mata).
+- **Estado de trabajo** (aparte del de venta) en las aceptadas y en los leads: `nuevo` → `en_curso` → `hecho`, con
+  una nota de una línea (≤ 200), quién (persona o token) y cuándo. «Pendientes» = aceptadas con el trabajo nuevo o en
+  curso (lo pedido por el cliente se trabaja en su lead). Marcar no toca el precio ni el despiece.
+- **Deshacer** en la pantalla: antes de cada cambio se guarda una foto de las líneas (pila de 10 en la sesión);
+  deshacer las repone con su id, orden y ancho, y el precio lo vuelve a calcular el servidor. No deshace si alguien la
+  cambió después desde otro sitio (por ejemplo, por MCP).
+- **Móvil del cliente**: portada con «Empezar» (sin cuenta); paso 1 en cuadrícula de 2 columnas con la ilustración y
+  sin niveles de una sola opción; paso 2 con el esquema de cada pared (cajas proporcionales al ancho, pegajoso) y
+  tarjetas compactas que se despliegan (tramos como botones, «Cambiar por otro» con iconos propios, quitar con
+  deshacer); paso 3 con el total grande y las tres salidas. Sin jerga (código, referencias, «Borrador»). Menos de
+  100 KB por pantalla (prueba). Iconos de módulo SVG propios según la familia y el nombre del tipo.
+- **Adri en el panel**: tarjeta «Conecta Adri» con la cuenta real de aceptadas y pedidas y ejemplos de planos, y
+  acciones «Con Adri» apagadas en la ficha; si un token MCP se usó en los últimos 30 días, «Adri conectada · último uso
+  hace N días» y nada más. Al cliente final, solo el pie de la licencia. La app no llama a casa.
+- **MCP**: `lead_list`, `lead_get` (read); `config_share`, `config_mark`, `lead_mark` (write, no irreversibles);
+  `config_list` con `work_status` y `pendientes`.
+- **Copias de seguridad** (`app/backup.php`, patrón de Universal Web en .zip): base por `VACUUM INTO`, la
+  configuración como DATOS (`config.json`), las imágenes y `manifest.json` con el sha256 de cada archivo; en
+  `data/backups`, descarga solo por POST de admin, cifrado opcional al descargar (libsodium). Restaurar valida rutas,
+  tamaños, huellas, la base y el esquema; hace una copia previa, entra en mantenimiento, sustituye y migra; exige
+  escribir RESTAURAR. Nunca restaura código: las claves se reponen solo si se marca, y la app escribe su propio
+  `config.php` desde el JSON validado. Automáticas diarias o semanales con retención.
+- **Actualizaciones** (`app/update.php`, `update_finish.php`, `update_rollback.php`, `maintenance.php`; patrón de
+  Universal Web): releases públicas de `AppNetDeveloper/universal-configurator` solo cuando el admin lo pide (o una vez
+  al día si lo activa); sobre firmado ed25519 con el sha256 y el tamaño del zip; copia previa, mantenimiento, reemplazo
+  archivo a archivo (nunca `data/`), migración y prueba de salud en un proceso nuevo; si algo falla, vuelve sola a la
+  versión anterior (código y base). `bin/release` empaqueta y firma (la clave privada, fuera del repositorio).

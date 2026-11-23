@@ -1,102 +1,132 @@
-# Capturas
+# Capturas (v0.3)
 
-Todas las pantallas con la **demostración** cargada (`bin/uc demo`: tres familias, 3 comerciales, 4 clientes y 12
-configuraciones ficticias). Tres tamaños: escritorio 1440×900, tablet 1024×768 y móvil 390×844. Los nombres, correos y
-teléfonos son inventados (`@example.com`).
+Todas las pantallas con la **demostración** cargada (`bin/uc demo`: tres familias, 3 comerciales, 4 clientes, 14
+configuraciones y leads ficticios). Tres tamaños: escritorio 1440×900, tablet 1024×768 y móvil 390×844. Los nombres,
+correos y teléfonos son inventados (`@example.com`). Se hacen con `tests/capturas.cjs` (ver «Cómo se rehacen»).
 
-Se hacen con `tests/capturas.cjs` (ver «Cómo se rehacen» al final).
+## El cliente final, en su móvil
 
-## El configurador
+**Portada.** Lo primero es «Empezar» (sin cuenta) con las ilustraciones de las familias; «Entrar» del equipo, discreto
+debajo. El equipo entra por `/entrar`.
 
-**Entrar.** La empresa pone su nombre y su logo; el pie con el crédito lo exige la licencia.
+| Portada (móvil) | Portada (escritorio) | Entrar del equipo |
+|---|---|---|
+| ![Portada](capturas/portada-movil.png) | ![Portada](capturas/portada-escritorio.png) | ![Entrar](capturas/entrar-equipo-escritorio.png) |
 
-![Entrar](capturas/entrar-escritorio.png)
-
-**Paso 1 — elegir.** Cada familia, modelo y acabado lleva una ilustración generada por la propia app (SVG sobrio, sin
-fotos de internet) con el acabado como color. El administrador puede cambiarla por una imagen suya.
+**Paso 1 — Elige.** Cuadrícula de 2 columnas con la ilustración grande (SVG propio, el acabado como color). Un nivel con
+una sola opción no se pregunta.
 
 | Familias | Modelos de cocina | Acabados de un armario |
 |---|---|---|
-| ![Familias](capturas/paso1-familias-escritorio.png) | ![Cocina](capturas/paso1-cocina-escritorio.png) | ![Acabados](capturas/paso1-acabados-escritorio.png) |
+| ![Familias](capturas/paso1-familias-movil.png) | ![Cocina](capturas/paso1-cocina-movil.png) | ![Acabados](capturas/paso1-acabados-movil.png) |
 
-**Paso 2 — los módulos.** El ancho con − / + o escrito, con un decimal (58,5). Cada medida cae en un tramo con su
-precio. Un ancho que queda entre dos tramos (50,5 cm, entre 41–50 y 51–60) se cobra como el tramo de arriba y la
-tarjeta lo dice en llano.
+**Paso 2 — Ajusta.** Arriba, el esquema de cada pared (cajas proporcionales al ancho; tocar una lleva a su tarjeta).
+Cada módulo es una tarjeta compacta: icono, nombre, precio y − ancho +. Al tocarla se despliega: los tramos como
+botones (el de 50,5 cm, en el hueco entre 41–50 y 51–60, se cobra como 51–60 y lo dice), «Cambiar por otro» con una
+lista de iconos y «Quitar». Quitar se deshace con un toque.
 
-| Escritorio | Tablet, en el módulo con el hueco de tramo |
-|---|---|
-| ![Paso 2](capturas/paso2-modulos-escritorio.png) | ![Hueco de tramo](capturas/paso2-hueco-de-tramo-tablet.png) |
+| Arriba | Hueco de tramo | Cambiar por otro | Quitado, con «Deshacer» |
+|---|---|---|---|
+| ![Paso 2](capturas/paso2-cliente-movil.png) | ![Hueco](capturas/paso2-hueco-de-tramo-movil.png) | ![Cambiar](capturas/paso2-cambiar-por-movil.png) | ![Deshacer](capturas/paso2-quitado-deshacer-movil.png) |
 
-**Paso 3 — resumen y aceptar.** Al aceptar el precio se congela (aunque cambien las tarifas). «Mis configuraciones» es
-la lista de cada persona.
+**Paso 3 — Listo.** El total grande (sin y con IVA), «Quiero este presupuesto» (nombre, teléfono, correo opcional,
+consentimiento → lead), «Envíamela por WhatsApp» y «Seguir cambiando». El total, siempre junto al botón. Al pedirlo:
+«¡Recibido!». El enlace compartido es de solo lectura y no lleva datos del cliente.
 
-| Resumen | Aceptada | Mis configuraciones |
+| Paso 3 | ¡Recibido! | Enlace compartido |
 |---|---|---|
-| ![Resumen](capturas/paso3-resumen-escritorio.png) | ![Aceptada](capturas/paso3-aceptada-escritorio.png) | ![Mis configuraciones](capturas/mis-configuraciones-escritorio.png) |
+| ![Paso 3](capturas/paso3-cliente-movil.png) | ![Recibido](capturas/paso3-recibido-movil.png) | ![Enlace](capturas/enlace-compartido-movil.png) |
 
-En el móvil: [entrar](capturas/entrar-movil.png) · [paso 1](capturas/paso1-familias-movil.png) ·
-[paso 2](capturas/paso2-modulos-movil.png) · [hueco de tramo](capturas/paso2-hueco-de-tramo-movil.png) ·
-[resumen](capturas/paso3-resumen-movil.png). En la tablet: [paso 1](capturas/paso1-familias-tablet.png) ·
-[paso 2](capturas/paso2-modulos-tablet.png) · [resumen](capturas/paso3-resumen-tablet.png).
+En escritorio: [paso 1](capturas/paso1-familias-escritorio.png) · [paso 2](capturas/paso2-cliente-escritorio.png) ·
+[hueco de tramo](capturas/paso2-hueco-de-tramo-escritorio.png) · [paso 3](capturas/paso3-cliente-escritorio.png) ·
+[recibido](capturas/paso3-recibido-escritorio.png) · [enlace](capturas/enlace-compartido-escritorio.png).
+En tablet: [portada](capturas/portada-tablet.png) · [paso 1](capturas/paso1-familias-tablet.png) ·
+[paso 2](capturas/paso2-cliente-tablet.png) · [cambiar por otro](capturas/paso2-cambiar-por-tablet.png) ·
+[paso 3](capturas/paso3-cliente-tablet.png) · [recibido](capturas/paso3-recibido-tablet.png).
+
+## El comercial, con la tablet
+
+En la tablet el esquema queda a la izquierda (pegajoso) y las tarjetas a la derecha. El comercial ve el código y las
+referencias, y **acepta**: el precio queda guardado.
+
+| Paso 2 | Resumen y aceptar | Aceptada | Mis configuraciones |
+|---|---|---|---|
+| ![Paso 2](capturas/paso2-comercial-tablet.png) | ![Resumen](capturas/paso3-comercial-escritorio.png) | ![Aceptada](capturas/paso3-aceptada-escritorio.png) | ![Mis](capturas/mis-configuraciones-escritorio.png) |
 
 ## El panel del administrador
 
-**Inicio**: recuento y últimas configuraciones de todo el equipo.
+**Inicio** con los leads nuevos y las pendientes de trabajar, y la tarjeta **«Conecta Adri»** con las cifras reales
+de la instalación y planos de ejemplo. Con un token MCP usado en los últimos 30 días, la tarjeta se queda en una línea:
+«Adri conectada · último uso hace N días».
 
-![Panel](capturas/panel-inicio-escritorio.png)
-
-**Catálogo en árbol** (sin límite de niveles) y la ficha de un nodo: datos, ilustración o imagen subida (PNG, JPEG o
-WebP, 2 MB como mucho), estado, hijos.
-
-| Catálogo | Un nodo |
-|---|---|
-| ![Catálogo](capturas/panel-catalogo-escritorio.png) | ![Nodo](capturas/panel-nodo-escritorio.png) |
-
-**Tipos de módulo y tramos.** Cada tipo con sus medidas, sus tramos por familia (y los que sustituyen en un modelo
-concreto: la cajonera de «Escala» es de gama alta) y el aviso de los huecos que se cobran con el tramo de arriba.
-Debajo, el **despiece por fórmulas** (W, H, D, T, B) con el resultado al momento para las medidas por defecto.
-
-| Tipos | Cajonera: tramos y despiece | Armario corredera: hojas solapadas |
+| Sin Adri | Con Adri conectada | En el móvil |
 |---|---|---|
-| ![Tipos](capturas/panel-tipos-escritorio.png) | ![Cajonera](capturas/panel-tipo-tramos-despiece-escritorio.png) | ![Corredera](capturas/panel-tipo-corredera-escritorio.png) |
+| ![Inicio](capturas/panel-inicio-escritorio.png) | ![Adri conectada](capturas/panel-inicio-adri-conectada-escritorio.png) | ![Inicio móvil](capturas/panel-inicio-movil.png) |
 
-**Composición por defecto** del modelo «Dúo» (cocina en L): las paredes con su dirección y origen y los módulos con los
-que arranca una configuración. Solo ofrece los módulos de su familia.
+**Leads**: lo que deja el cliente, con su configuración, el estado (nuevo, contactado, cerrado) y el trabajo con nota.
 
-![Composición](capturas/panel-composicion-escritorio.png)
-
-**Configuraciones** (filtros por texto, estado, fechas y persona; CSV) y la **ficha**: módulos por pared, despiece de
-cada módulo, lista de corte agrupada y descargas JSON/CSV.
-
-| Lista | Ficha (escritorio) | Ficha (tablet) |
+| Escritorio | Tablet | Móvil |
 |---|---|---|
-| ![Configuraciones](capturas/panel-configuraciones-escritorio.png) | ![Ficha](capturas/panel-ficha-escritorio.png) | ![Ficha en tablet](capturas/panel-ficha-tablet.png) |
+| ![Leads](capturas/panel-leads-escritorio.png) | ![Leads tablet](capturas/panel-leads-tablet.png) | ![Leads móvil](capturas/panel-leads-movil.png) |
 
-**Personas, ajustes, tokens MCP y actividad.** En los ajustes, el correo por SMTP con el botón de correo de prueba.
-En tokens, el de la demostración ya está revocado: un token vivo solo se ve una vez, al crearlo, y nunca sale en una
-captura.
+**Configuraciones** (filtros por estado, trabajo, «solo pendientes», fechas y persona) y la **ficha**: despiece de
+cada módulo, lista de corte, estado de trabajo y acciones «Con Adri» (apagadas mientras Adri no está conectada). Una
+pedida enseña el lead y el botón «Aceptar (cerrar la venta)».
+
+| Lista | Pendientes | Ficha | Pedida | Ficha con Adri |
+|---|---|---|---|---|
+| ![Lista](capturas/panel-configuraciones-escritorio.png) | ![Pendientes](capturas/panel-configuraciones-pendientes-escritorio.png) | ![Ficha](capturas/panel-ficha-escritorio.png) | ![Pedida](capturas/panel-ficha-pedida-escritorio.png) | ![Con Adri](capturas/panel-ficha-adri-conectada-escritorio.png) |
+
+**Catálogo, tipos y tramos, despiece y composición**:
+
+| Catálogo | Un nodo | Tipos | Cajonera: tramos y despiece | Corredera | Composición |
+|---|---|---|---|---|---|
+| ![Catálogo](capturas/panel-catalogo-escritorio.png) | ![Nodo](capturas/panel-nodo-escritorio.png) | ![Tipos](capturas/panel-tipos-escritorio.png) | ![Cajonera](capturas/panel-tipo-tramos-despiece-escritorio.png) | ![Corredera](capturas/panel-tipo-corredera-escritorio.png) | ![Composición](capturas/panel-composicion-escritorio.png) |
+
+**Copias de seguridad y actualizaciones.** La copia avisa de que lleva las claves; se descarga (con cifrado opcional),
+se restaura escribiendo RESTAURAR o se borra. En Actualizaciones, la versión instalada, la nueva con sus cambios y
+cuándo se busca (la única conexión de salida). En esta captura la copia es de Git, y el panel lo dice en vez de
+actualizar: se actualiza desde la terminal.
+
+| Copias | Copias (móvil) | Actualizaciones |
+|---|---|---|
+| ![Copias](capturas/panel-copias-escritorio.png) | ![Copias móvil](capturas/panel-copias-movil.png) | ![Actualizaciones](capturas/panel-actualizaciones-escritorio.png) |
+
+**Personas, ajustes (con el correo SMTP), tokens MCP (el de la demo está revocado: un token vivo solo se ve una vez) y
+actividad**:
 
 | Personas | Ajustes | Tokens MCP | Actividad |
 |---|---|---|---|
 | ![Personas](capturas/panel-personas-escritorio.png) | ![Ajustes](capturas/panel-ajustes-escritorio.png) | ![Tokens](capturas/panel-tokens-escritorio.png) | ![Actividad](capturas/panel-actividad-escritorio.png) |
 
-En el móvil: [inicio](capturas/panel-inicio-movil.png) · [catálogo](capturas/panel-catalogo-movil.png).
+## Lo que se corrigió al mirarlas
 
-## Lo que se corrigió al mirarlas (v0.2)
+**v0.3**
+- El primer módulo del paso 2 salía al 63 % de la pantalla del móvil y 10 módulos ocupaban 3,3 pantallas: cabecera
+  y esquema más compactos → al 49 % (con el esquema de tres paredes encima) y 2,9 pantallas.
+- El botón «Deshacer» aparecía sin haber nada que deshacer (el estilo del botón pisaba el atributo `hidden`).
+- El paso 3 del móvil se salía por la derecha (el botón «Quiero este presupuesto · 1.450 €» no se partía).
+- Las cajas del esquema con la altura de cada módulo confundían: ahora todas igual, proporcionales al ancho.
+- Los nombres largos se cortaban («Lavavajillas inte…»): ahora en dos líneas.
+- Al desplegar una tarjeta, lo desplegado quedaba bajo la barra del total: ahora se desplaza para verse.
+- Los iconos de módulo daban errores en la consola (un fallo al montar el trazo del SVG).
+- La pantalla del paso 2 rozaba los 100 KB: fuera el despiece de los datos de la pantalla (98 → 87 KB).
+- «Entrar» del equipo decía «Diseña tu producto…»: ahora habla al equipo.
+- La tabla de copias no cabía en el móvil: ahora una tarjeta por copia.
+- El menú del panel se cortaba en escritorio (Actualizaciones, Actividad): ahora usa todo el ancho.
 
-- Los tiradores de los acabados oscuros (gris grafito, antracita) no se veían: el color del tirador sale ahora del
-  contraste con el acabado.
-- La cuadrícula de opciones dejaba una tarjeta suelta en una fila (4 acabados en 3 columnas): ahora se reparte sola.
-- El despiece del tipo de módulo se salía por la derecha en escritorio (la última columna y los botones no se veían) y
-  las fórmulas largas se cortaban: columnas más justas, «A lo largo / A lo ancho» en la columna «Veta» y el resultado
-  en dos líneas.
-- El tramo de un solo valor se leía «60–60 cm»: ahora «60 cm».
-- La composición por defecto ofrecía los módulos de las tres familias (un armario en una cocina): ahora solo los que
-  tienen tramos para ese modelo.
-- En el móvil, el árbol del catálogo se salía de la pantalla y las tablas de configuraciones tapaban el estado: árbol
-  más compacto, estado bajo el código y el correo del cliente oculto en pantallas pequeñas.
-- La barra fija del total tapaba el módulo del hueco de tramo en la captura de página entera: el paso 2 se captura a
-  tamaño de pantalla, centrado en ese módulo.
+**v0.2**
+- Tiradores invisibles en acabados oscuros; tarjetas sueltas en la cuadrícula; despiece del tipo que se salía en
+  escritorio; «60–60 cm»; la composición ofrecía módulos de otras familias; árbol y tablas que se salían en el móvil.
+
+## Antes y después (recorrido del móvil)
+
+El mismo recorrido (iPhone 13; portada → paso 1 → Cocina → Dúo → Roble → paso 2 → «+» → resumen) hecho sobre la v0.2
+y sobre la v0.3 se compara lado a lado con `tests/capturas.cjs` y el script de recorrido del coordinador. Qué mejoró:
+la portada empieza por «Empezar»; el paso 1 se ve en dos columnas con la ilustración; el paso 2 ya no gasta media
+pantalla en pasos, ruta y párrafo, enseña el esquema y tarjetas compactas sin referencias ni código; el paso 3 ya no
+pide «Aceptar» al cliente. Qué sigue flojo: con tres paredes, el esquema pegajoso ocupa unos 110 px del móvil; las
+ilustraciones de planta (cocina en L y en paralelo) se leen peor que las de alzado.
 
 ## Cómo se rehacen
 
@@ -105,11 +135,16 @@ docker run -d --name uc-dev -p 127.0.0.1:8190:8190 -e UC_DATA=/tmp/uc-data -v "$
   php -S 0.0.0.0:8190 -t public public/index.php
 docker exec -e UC_DATA=/tmp/uc-data -e UC_PASSWORD=admin-12345 uc-dev sh -c 'php bin/uc install --empresa="Muebles Ébano" \
   --email=admin@example.org --name="Carmen Vidal" --url=http://127.0.0.1:8190 && php bin/uc demo && php -r "require \"app/bootstrap.php\";
-  settings_save([\"permitir_registro\"=>\"1\",\"permitir_invitado\"=>\"1\",\"mail_transport\"=>\"smtp\",\"smtp_host\"=>\"smtp.muebles-ebano.example\",
-  \"smtp_port\"=>\"587\",\"smtp_encryption\"=>\"tls\",\"mail_from\"=>\"pedidos@muebles-ebano.example\"]);"'
+  settings_save([\"permitir_registro\"=>\"1\",\"permitir_invitado\"=>\"1\",\"mail_transport\"=>\"log\",\"smtp_host\"=>\"smtp.muebles-ebano.example\",
+  \"backup_auto\"=>\"daily\"]); backup_create(true); backup_create();"'
 PW_CORE=/ruta/a/playwright-core CHROME=/ruta/a/chrome node tests/capturas.cjs /tmp/capturas
+# «Adri conectada»: crea un token, márcalo como usado y repite solo esas capturas
+docker exec -e UC_DATA=/tmp/uc-data uc-dev sh -c 'php bin/uc token --name=ADRI --email=laura.martin@example.com && php -r "require \"app/bootstrap.php\";
+  q(\"UPDATE mcp_tokens SET last_used_at = datetime(\x27now\x27, \x27-2 days\x27, \x27localtime\x27) WHERE revoked_at IS NULL\");"'
+UC_ADRI_ON=1 PW_CORE=… CHROME=… node tests/capturas.cjs /tmp/capturas
 docker rm -f uc-dev
 ```
 
-El script avisa si alguna página se sale por la derecha. Las elegidas se copian a `docs/capturas/` reducidas a paleta
-de 256 colores (en capturas de interfaz no se nota y pesan un tercio).
+El script avisa si alguna página se sale por la derecha. Para la captura de Actualizaciones con «hay versión nueva»
+sin conectarse a GitHub, se deja el estado de la búsqueda en la tabla `meta` (`update_state`). Las elegidas se copian a
+`docs/capturas/` reducidas a paleta de 256 colores.

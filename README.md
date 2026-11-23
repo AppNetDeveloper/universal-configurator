@@ -8,29 +8,34 @@ Universal Web.
   **tabla de precios por tramos de medida** (de 41 a 60 cm = X €; no se cobra por centímetro) y la **composición por
   defecto** de cada modelo (paredes con sus módulos). Cada tipo lleva sus **medidas reales** (ancho, alto, fondo,
   tablero y trasera) y su **despiece por fórmulas** (laterales, base, trasera, puertas, cajones…).
-- Un **comercial**, un **cliente** o un **invitado** (si se permite) elige en la tablet hasta un nodo final, ajusta el
-  ancho de cada módulo (admite un decimal: 58,5 cm), lo quita, lo sustituye o añade otros, ve el total sin IVA al momento y acepta. Al aceptar, el
-  precio queda **congelado**: si luego cambia la tarifa, lo aceptado no cambia.
-- El administrador ve todas las configuraciones y las descarga en **JSON** y **CSV**.
+- El **cliente final**, en su móvil y sin registrarse, elige con imágenes grandes, ajusta cada módulo con un dedo
+  (admite un decimal: 58,5 cm) viendo el esquema de su cocina y el precio, deshace si se equivoca y, al final, pide el
+  presupuesto («Quiero este presupuesto»: deja su teléfono y se crea un **lead**) o se la manda por **WhatsApp**.
+- El **comercial**, con la tablet delante del cliente, configura igual y **acepta**: el precio queda **congelado**
+  (si luego cambia la tarifa, lo aceptado no cambia).
+- El administrador ve todas las configuraciones y los **leads** con su estado de trabajo, las descarga en **JSON** y
+  **CSV**, hace **copias de seguridad** y **actualiza** la aplicación desde el panel.
 - **ADRI** (u otra IA) se conecta por **MCP** y lee o cambia configuraciones con sus medidas exactas para hacer fuera lo
   pesado: plano CAD acotado del módulo y de sus piezas (medidas en mm y despiece), PDF profesional, seguimiento. La
   aplicación no dibuja planos. Manual del MCP para la IA: [`docs/MCP.md`](docs/MCP.md).
 
-El diseño completo (datos, reglas, acceso, pantallas, MCP) está en [`docs/DISENO.md`](docs/DISENO.md).
+**Manual de uso** (cliente, comercial y administrador): [`docs/MANUAL.md`](docs/MANUAL.md). Qué se vende y a quién:
+[`docs/PRODUCTO.md`](docs/PRODUCTO.md). El diseño completo (datos, reglas, acceso, pantallas, MCP) está en
+[`docs/DISENO.md`](docs/DISENO.md). Cambios por versión: [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## Cómo se ve
 
-| Elegir el modelo (ilustraciones propias, el acabado como color) | Ajustar los módulos: 58,5 cm y un ancho entre tramos |
-|---|---|
-| ![Paso 1: familias](docs/capturas/paso1-familias-escritorio.png) | ![Paso 2 en la tablet](docs/capturas/paso2-hueco-de-tramo-tablet.png) |
+| El cliente, en su móvil: elegir | Ajustar con el esquema de la cocina | Pedir el presupuesto |
+|---|---|---|
+| ![Paso 1 en el móvil](docs/capturas/paso1-familias-movil.png) | ![Paso 2 en el móvil](docs/capturas/paso2-cliente-movil.png) | ![Paso 3 en el móvil](docs/capturas/paso3-cliente-movil.png) |
 
-| Tramos y despiece por fórmulas en el panel | Ficha con despiece y lista de corte |
+| El comercial, en la tablet | El panel: leads y estado de trabajo |
 |---|---|
-| ![Tipo de módulo](docs/capturas/panel-tipo-tramos-despiece-escritorio.png) | ![Ficha de una configuración](docs/capturas/panel-ficha-tablet.png) |
+| ![Paso 2 en la tablet](docs/capturas/paso2-comercial-tablet.png) | ![Leads](docs/capturas/panel-leads-escritorio.png) |
 
-| En el móvil | Panel de inicio |
+| Tramos y despiece por fórmulas | Conecta Adri |
 |---|---|
-| ![Paso 2 en el móvil](docs/capturas/paso2-modulos-movil.png) | ![Panel](docs/capturas/panel-inicio-escritorio.png) |
+| ![Tipo de módulo](docs/capturas/panel-tipo-tramos-despiece-escritorio.png) | ![Panel con la tarjeta de Adri](docs/capturas/panel-inicio-escritorio.png) |
 
 Todas las pantallas, comentadas: [`docs/CAPTURAS.md`](docs/CAPTURAS.md).
 
@@ -63,6 +68,10 @@ UC_PASSWORD='…' php bin/uc install --empresa="Mi empresa" --email=yo@miempresa
 php bin/uc token --name=ADRI --email=yo@miempresa.com --scopes=read,write   # token MCP (se muestra una vez)
 php bin/uc reset-link --email=persona@miempresa.com                          # enlace para poner contraseña
 php bin/uc demo                                                               # SOLO para enseñar la app: ver abajo
+php bin/uc backup                     # copia de seguridad ahora (con --auto, solo si toca: para cron)
+php bin/uc restore <copia.zip> --yes  # restaurar (antes guarda otra del estado actual)
+php bin/uc update:check               # ¿hay versión nueva? (la única conexión de salida, y solo si se pide)
+php bin/uc update --yes               # actualizar (copia previa, firma y sha256, vuelta atrás si falla)
 ```
 
 `bin/uc demo` carga una **demostración**: los datos de ejemplo, 3 comerciales y 4 clientes ficticios (`@example.com`,
@@ -83,7 +92,8 @@ enlace para poner su contraseña (y el panel lo enseña por si el correo no sale
 ## Conectar ADRI por MCP
 
 1. **Panel → Tokens MCP → Nuevo token**: ponle un nombre (p. ej. «ADRI»), elige **como quién actúa** y los permisos.
-   - `read`: leer catálogo y configuraciones. `write`: además crear, cambiar y aceptar.
+   - `read`: leer catálogo, configuraciones y leads. `write`: además crear, cambiar, aceptar, compartir y marcar el
+     trabajo. Aceptar solo con un token de un comercial o un administrador.
    - El token actúa como la persona elegida: si es un comercial, solo ve y toca **sus** configuraciones; si es un
      administrador, todas. Si esa persona se desactiva, el token deja de valer.
    - El token se muestra **una sola vez**; se guarda solo su huella. Se revoca desde la misma pantalla.
@@ -103,6 +113,13 @@ enlace para poner su contraseña (y el panel lo enseña por si el correo no sale
 | `config_update` | write | Cambios en un borrador: `set_width`, `remove`, `add`, `replace`, `customer` (todos o ninguno) |
 | `config_accept` | write | Acepta un borrador y congela su precio y su despiece. La aceptación la debe confirmar la persona |
 | `cut_list` | read | Lista de corte agregada (piezas iguales sumadas por espesor y medidas, con su módulo de origen) |
+| `config_share` | write | Enlace de solo lectura para el cliente (30 días) y el de WhatsApp |
+| `config_mark` | write | Estado de trabajo de una aceptada (nuevo, en curso, hecho) y una nota |
+| `lead_list` · `lead_get` | read | Clientes que pidieron presupuesto, con su configuración y su estado |
+| `lead_mark` | write | Estado de trabajo y estado comercial de un lead |
+
+**Lo nuevo sin procesar**: `config_list(pendientes=true)` → por cada una, lo tuyo → `config_mark(hecho, nota)`; y
+`lead_list(work_status="nuevo")` → `lead_get` → `lead_mark`.
 
 Para dibujar en CAD: `config_get` (medidas en mm y despiece de cada módulo) o `cut_list`. El precio y las piezas los
 calcula siempre la aplicación. Un parámetro que la herramienta no conoce es un error, nunca se ignora.
