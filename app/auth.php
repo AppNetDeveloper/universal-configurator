@@ -120,52 +120,86 @@ function login_dummy_hash(): string
 const LOGIN_FAIL_CAP = 50;          // fallos por cuenta y hora (desde cualquier IP): al pasarlo, 429 hasta que pase la hora
 const LOGIN_BACKOFF_MAX = 60;       // espera máxima entre intentos a una cuenta tras fallos seguidos (s)
 
+const TRUST_COOKIE = 'uc_trust';
+const TRUST_DAYS = 90;
+
 /**
  * Login local. Límites (ninguno duerme: si toca esperar, 429 al momento):
  *  - por IP (IPv6 por /64): 20 intentos / 15 min;  por correo+IP: 5 / 15 min;
- *  - por cuenta, sin depender de la IP: tras cada fallo, el siguiente intento no se permite hasta pasados 1, 2, 4… s
- *    (tope 60 s) y, con 50 fallos en una hora, 429 hasta que pase la hora. Restablecer por correo sigue funcionando.
- * Devuelve el usuario o lanza UcError.
+ *  - por cuenta+IP: tras cada fallo, el siguiente intento desde esa IP no se permite hasta pasados 1, 2, 4… s (tope 60 s);
+ *  - por cuenta, sin depender de la IP: 50 fallos en una hora → 429 hasta que pase la hora.
+ * Un intento desde un dispositivo de confianza de ESA cuenta (cookie firmada tras un login correcto) no sufre ni la espera
+ * ni el tope por cuenta (solo los límites por IP), y sus fallos no cuentan para el tope: un atacante no puede dejar fuera
+ * a la dueña. Restablecer la contraseña por correo quita el bloqueo de la cuenta. Devuelve el usuario o lanza UcError.
  */
 function login_attempt(string $email, string $password): array
 {
     $email = strtolower(trim($email));
     $mailHash = hash('sha256', $email);
     $ip = client_ip_key();
+    $u = user_by_email($email);
+    $trusted = $u && trusted_device_user((string) ($_COOKIE[TRUST_COOKIE] ?? '')) === (int) $u['id'];
+    $boKey = $mailHash . ':' . $ip;
     $blocked = !throttle('login-ip:' . $ip, 20, 900) || !throttle('login-mailip:' . $mailHash . ':' . $ip, 5, 900);
-    $fails = row('SELECT hits, reset_at FROM throttle WHERE key = ?', ['login-fails:' . $mailHash]);
-    $blocked = $blocked || ($fails && (int) $fails['reset_at'] >= time() && (int) $fails['hits'] >= LOGIN_FAIL_CAP);
-    $bo = row('SELECT * FROM login_backoff WHERE key = ?', [$mailHash]);
-    $blocked = $blocked || ($bo && clock() < (float) $bo['next_at']);
+    if (!$trusted) {
+        $fails = row('SELECT hits, reset_at FROM throttle WHERE key = ?', ['login-fails:' . $mailHash]);
+        $blocked = $blocked || ($fails && (int) $fails['reset_at'] >= time() && (int) $fails['hits'] >= LOGIN_FAIL_CAP);
+        $bo = row('SELECT * FROM login_backoff WHERE key = ?', [$boKey]);
+        $blocked = $blocked || ($bo && clock() < (float) $bo['next_at']);
+    }
     if ($blocked) {
         if (throttle('audit-throttled:' . $mailHash . ':' . $ip, 1, 900)) audit('user.login_throttled', $email); // una fila por ventana
         throw new UcError(t('Demasiados intentos. Espera un poco y vuelve a probar (o restablece tu contraseña).'), [], 429);
     }
-    $u = user_by_email($email);
     $ok = password_verify($password, $u['password_hash'] ?? login_dummy_hash());
     if (!$u || !$ok || !$u['active'] || $u['auth_source'] !== 'local' || $u['password_hash'] === null) {
-        login_fail($mailHash);
+        if (!$trusted) login_fail($boKey, $mailHash);
         audit('user.login_failed', $email);
         throw new UcError(t('Correo o contraseña incorrectos.'), [], 401);
     }
-    q('DELETE FROM login_backoff WHERE key = ?', [$mailHash]);
+    q('DELETE FROM login_backoff WHERE key = ?', [$boKey]);
     throttle_clear('login-mailip:' . $mailHash . ':' . $ip);
     if (password_needs_rehash($u['password_hash'], PASSWORD_BCRYPT, PASSWORD_OPTS)) {
         q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($password, PASSWORD_BCRYPT, PASSWORD_OPTS), $u['id']]);
     }
     session_login($u);
+    trusted_device_set((int) $u['id']);
     audit('user.login', $email);
     return $u;
 }
 
-/** Apunta un fallo de la cuenta: espera progresiva hasta el siguiente intento y contador por hora. */
-function login_fail(string $mailHash): void
+/** Valor firmado de la cookie de dispositivo de confianza: «id.caducidad.hmac» (HMAC-SHA256 con la clave de config.php). */
+function trusted_device_value(int $userId, int $expires): string
+{
+    $payload = $userId . '.' . $expires;
+    return $payload . '.' . hash_hmac('sha256', 'trust|' . $payload, (string) config('secret', ''));
+}
+
+/** Id de la persona si la cookie es válida (firma y caducidad); si no, null. */
+function trusted_device_user(string $value): ?int
+{
+    if ((string) config('secret', '') === '' || !preg_match('/^(\d+)\.(\d+)\.([a-f0-9]{64})$/', $value, $m)) return null;
+    if ((int) $m[2] < time()) return null;
+    return hash_equals(trusted_device_value((int) $m[1], (int) $m[2]), $value) ? (int) $m[1] : null;
+}
+
+function trusted_device_set(int $userId): void
+{
+    $v = trusted_device_value($userId, time() + TRUST_DAYS * 86400);
+    $GLOBALS['uc_trust_cookie'] = $v;
+    if (PHP_SAPI !== 'cli' && !headers_sent()) {
+        setcookie(TRUST_COOKIE, $v, ['expires' => time() + TRUST_DAYS * 86400, 'path' => '/', 'httponly' => true, 'secure' => is_https(), 'samesite' => 'Lax']);
+    }
+}
+
+/** Apunta un fallo: espera progresiva para esa cuenta desde esa IP y contador por cuenta y hora. */
+function login_fail(string $boKey, string $mailHash): void
 {
     $now = clock();
-    $bo = row('SELECT * FROM login_backoff WHERE key = ?', [$mailHash]);
+    $bo = row('SELECT * FROM login_backoff WHERE key = ?', [$boKey]);
     $fails = $bo && $now - (float) $bo['last_fail_at'] < 3600 ? (int) $bo['fails'] + 1 : 1;
     $wait = min(LOGIN_BACKOFF_MAX, 2 ** min(10, $fails - 1));
-    q('INSERT OR REPLACE INTO login_backoff (key, fails, next_at, last_fail_at) VALUES (?, ?, ?, ?)', [$mailHash, $fails, $now + $wait, $now]);
+    q('INSERT OR REPLACE INTO login_backoff (key, fails, next_at, last_fail_at) VALUES (?, ?, ?, ?)', [$boKey, $fails, $now + $wait, $now]);
     throttle('login-fails:' . $mailHash, PHP_INT_MAX, 3600);
 }
 
@@ -209,17 +243,19 @@ function register_user(string $name, string $email): string
 /** Los dos caminos del registro hacen el mismo trabajo: crear un token y enviar un correo. */
 function register_user_send(string $name, string $email): void
 {
-    if (!throttle('register-mail:' . hash('sha256', $email), 3, 3600)) return;
     if (public_url() === null) { audit('mail.no_public_url', "registro de $email: no enviado (falta la URL pública)"); return; }
     $empresa = mail_name(setting('empresa'));
     $existing = user_by_email($email);
     if ($existing && !$existing['pending_verification']) {
-        // Ya tiene cuenta: aviso al DUEÑO con el enlace de restablecer (nunca el de activar). Sin texto de quien se registra.
-        $link = reset_link(password_reset_create((int) $existing['id']));
+        // Ya tiene cuenta: solo un aviso al DUEÑO, sin crear ningún token (no invalida una invitación viva), con las
+        // mismas reglas que «olvidé mi contraseña» (cuentas activas y locales) y en su mismo límite de correos.
+        if (!$existing['active'] || $existing['auth_source'] !== 'local') return;
+        if (!throttle('reset-mail:' . hash('sha256', $email), 3, 3600)) return;
         $subject = t('Intento de registro con tu correo en {empresa}', ['empresa' => $empresa]);
-        $body = t("Hola:\n\nAlguien ha intentado registrarse con tu correo en {empresa}. Si eras tú, entra con tu cuenta o restablece tu contraseña con este enlace (vale 1 hora):\n{enlace}\n\nSi no fuiste tú, ignora este correo: tu cuenta no ha cambiado.\n", ['empresa' => $empresa, 'enlace' => $link]);
+        $body = t("Hola:\n\nAlguien ha intentado registrarse con tu correo en {empresa}. Si eras tú, entra con tu cuenta o usa «He olvidado mi contraseña» en {url}/olvide.\n\nSi no fuiste tú, ignora este correo: tu cuenta no ha cambiado.\n", ['empresa' => $empresa, 'url' => public_url()]);
         audit('user.register_existing', $email);
     } else {
+        if (!throttle('register-mail:' . hash('sha256', $email), 3, 3600)) return;
         $id = $existing ? (int) $existing['id'] : (int) tx(function () use ($email, $name) {
             $id = user_create($email, $name, 'cliente', null);
             update('users', ['active' => 0, 'pending_verification' => 1], 'id = ?', [$id]);
@@ -276,7 +312,8 @@ function session_viewer(): ?array
 function password_reset_create(int $userId, int $ttl = RESET_TTL): string
 {
     $raw = bin2hex(random_bytes(24));
-    q('DELETE FROM password_resets WHERE user_id = ? OR expires_at < ?', [$userId, time()]);
+    // Se borran los caducados y los de esa persona que duran menos que el nuevo; una invitación viva (72 h) se conserva.
+    q('DELETE FROM password_resets WHERE expires_at < ? OR (user_id = ? AND expires_at <= ?)', [time(), $userId, time() + $ttl]);
     insert('password_resets', ['token_hash' => hash('sha256', $raw), 'user_id' => $userId, 'expires_at' => time() + $ttl]);
     return $raw;
 }
@@ -329,6 +366,9 @@ function password_reset_consume(string $raw, string $password): array
     tx(function () use ($u, $password) {
         user_set_password((int) $u['id'], $password);
         if ($u['pending_verification']) update('users', ['active' => 1, 'pending_verification' => 0], 'id = ?', [$u['id']]); // correo verificado
+        $h = hash('sha256', strtolower($u['email']));
+        q('DELETE FROM login_backoff WHERE key LIKE ?', [$h . ':%']); // quien demuestra que es dueña del correo deja de estar bloqueada
+        q('DELETE FROM throttle WHERE key = ?', ['login-fails:' . $h]);
         q('DELETE FROM password_resets WHERE user_id = ?', [$u['id']]);
     });
     audit('user.password_reset', $u['email']);

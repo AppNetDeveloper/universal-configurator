@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 define('UC_TESTING', true);
 require __DIR__ . '/_helper.php';
+file_put_contents(UC_DATA . '/config.php', "<?php return ['secret' => 'clave-de-pruebas-0123456789abcdef'];"); // firma de la cookie de confianza
 
 settings_save(['mail_transport' => 'log', 'url_publica' => 'https://conf.test']);
 $c = fx_catalog();
@@ -42,21 +43,29 @@ check('tras un fallo, el siguiente intento a esa cuenta antes de tiempo: 429 al 
     $ms = (hrtime(true) - $t) / 1e6;
     return eq(429, $r) && eq(true, $ms < 300, sprintf('tardó %.0f ms', $ms));
 });
-check('la espera es progresiva (1, 2, 4… s) con tope de 60 s', function () use ($as, $tryLogin, $advance) {
+check('la espera es progresiva (1, 2, 4… s) con tope de 60 s, desde la misma IP', function () use ($as, $tryLogin, $advance) {
     q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     $waits = [];
     for ($i = 0; $i < 8; $i++) {
-        $as('10.9.' . $i . '.1');
+        $as('10.9.0.1'); q("DELETE FROM throttle WHERE key LIKE 'login-mailip:%'");
         $tryLogin('ana@x.test', 'mala');
         $waits[] = (int) round((float) val('SELECT next_at FROM login_backoff') - clock());
         $advance(61);
     }
     return eq([1, 2, 4, 8, 16, 32, 60, 60], $waits);
 });
-check('pasada la espera, la dueña entra (desde otra IP)', function () use ($as, $tryLogin, $advance) {
-    $advance(61);
+check('los fallos de un atacante desde su IP no retrasan a la dueña en la suya', function () use ($as, $tryLogin) {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    $as('10.66.0.1');
+    for ($i = 0; $i < 3; $i++) $tryLogin('ana@x.test', 'mala');
     $as('10.0.0.2');
     return eq('ok', $tryLogin('ana@x.test', 'clave-de-ana'));
+});
+$trusted = '';
+check('tras entrar bien, queda una cookie de dispositivo de confianza firmada para esa cuenta', function () use (&$trusted, $ana) {
+    $trusted = (string) ($GLOBALS['uc_trust_cookie'] ?? '');
+    return eq(true, $trusted !== '') && eq((int) $ana['id'], trusted_device_user($trusted)) && eq(null, trusted_device_user($trusted . 'x'))
+        && eq(null, trusted_device_user(preg_replace('/^\d+/', '999', $trusted)));
 });
 check('5 fallos desde una IP bloquean ESA IP para ese correo', function () use ($as, $tryLogin, $advance) {
     q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
@@ -64,17 +73,36 @@ check('5 fallos desde una IP bloquean ESA IP para ese correo', function () use (
     for ($i = 0; $i < 5; $i++) { $tryLogin('ana@x.test', 'mala'); $advance(61); }
     return eq(429, $tryLogin('ana@x.test', 'clave-de-ana'));
 });
-check('tope duro por cuenta: 50 fallos en una hora desde IP distintas → 429 hasta que pase la hora', function () use ($as, $tryLogin, $advance) {
+check('tope duro por cuenta: 50 fallos en una hora desde IP distintas → 429 sin cookie de confianza', function () use ($as, $tryLogin) {
     q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
-    for ($i = 0; $i < 50; $i++) { $as('10.5.' . intdiv($i, 200) . '.' . ($i % 200 + 1)); $tryLogin('ana@x.test', 'mala'); $advance(61); q('DELETE FROM login_backoff'); }
+    unset($_COOKIE['uc_trust']);
+    for ($i = 0; $i < 50; $i++) { $as('10.5.0.' . ($i + 1)); $tryLogin('ana@x.test', 'mala'); }
     $as('10.6.0.1');
-    $blocked = $tryLogin('ana@x.test', 'clave-de-ana');
-    return eq(429, $blocked);
+    return eq(429, $tryLogin('ana@x.test', 'clave-de-ana'));
 });
-check('con la cuenta bloqueada, restablecer por correo sigue funcionando', function () use ($lastToken) {
+check('…pero desde su dispositivo de confianza la dueña entra (solo cuenta el límite por IP)', function () use ($as, $tryLogin, &$trusted) {
+    $_COOKIE['uc_trust'] = $trusted;
+    $as('10.6.0.2');
+    $r = $tryLogin('ana@x.test', 'clave-de-ana');
+    unset($_COOKIE['uc_trust']);
+    return eq('ok', $r);
+});
+check('la cookie de confianza de OTRA cuenta no salta el tope', function () use ($as, $tryLogin, &$trusted, $admin) {
+    $_COOKIE['uc_trust'] = $trusted; // es de Ana
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    for ($i = 0; $i < 50; $i++) { $as('10.7.0.' . ($i + 1)); $tryLogin('admin@x.test', 'mala'); }
+    $as('10.7.1.1');
+    $r = $tryLogin('admin@x.test', 'secreta123');
+    unset($_COOKIE['uc_trust']);
+    return eq(429, $r);
+});
+check('con la cuenta bloqueada, restablecer por correo funciona y quita el bloqueo de la cuenta', function () use ($lastToken, $as, $tryLogin) {
+    $as('10.6.0.9');
     password_reset_request('ana@x.test');
     $u = password_reset_consume($lastToken(), 'clave-de-ana');
-    return eq('ana@x.test', $u['email']);
+    $h = hash('sha256', 'ana@x.test');
+    $left = (int) val('SELECT COUNT(*) FROM login_backoff WHERE key LIKE ?', [$h . ':%']) + (int) val('SELECT COUNT(*) FROM throttle WHERE key = ?', ['login-fails:' . $h]);
+    return eq('ana@x.test', $u['email']) && eq(0, $left) && eq('ok', $tryLogin('ana@x.test', 'clave-de-ana'));
 });
 q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
 check('IPv6: las claves de IP agrupan por /64', function () {
@@ -126,12 +154,32 @@ check('la sesión propia sigue viva tras restablecer', function () use ($lastTok
 
 // 5. Registro con verificación del correo y sin delatar cuentas
 settings_save(['permitir_registro' => '1']);
-check('registrarse con un correo que ya existe: mismo mensaje y al dueño le llega un aviso con enlace de RESTABLECER', function () use ($mailLog) {
+check('registrarse con un correo que ya existe: mismo mensaje, aviso al dueño con /olvide y SIN token nuevo', function () use ($mailLog) {
+    q('DELETE FROM throttle');
     $before = strlen($mailLog());
+    $tokens = (int) val('SELECT COUNT(*) FROM password_resets');
     $msg = register_user('Otra', 'ana@x.test');
     $new = substr($mailLog(), $before);
-    return eq(REGISTER_MESSAGE, $msg) && eq(true, str_contains($new, 'Para: ana@x.test') && str_contains($new, 'Alguien ha intentado registrarse') && str_contains($new, '/restablecer?token='))
-        && eq(false, str_contains($new, 'Otra'));
+    return eq(REGISTER_MESSAGE, $msg) && eq(true, str_contains($new, 'Para: ana@x.test') && str_contains($new, 'Alguien ha intentado registrarse') && str_contains($new, 'https://conf.test/olvide'))
+        && eq(false, str_contains($new, '/restablecer?token=') || str_contains($new, 'Otra')) && eq($tokens, (int) val('SELECT COUNT(*) FROM password_resets'));
+});
+check('esos avisos cuentan en el límite de correos de restablecer (no se puede bombardear)', function () use ($mailLog) {
+    q('DELETE FROM throttle');
+    $before = substr_count($mailLog(), 'Para: ana@x.test');
+    for ($i = 0; $i < 6; $i++) register_user('X', 'ana@x.test');
+    password_reset_request('ana@x.test');
+    q('DELETE FROM throttle');
+    return eq(3, substr_count($mailLog(), 'Para: ana@x.test') - $before);
+});
+check('un restablecer no invalida una invitación viva de 72 h', function () use ($lastToken) {
+    q('DELETE FROM throttle');
+    [$id, $link] = user_invite('ines@x.test', 'Inés', 'comercial');
+    $invite = substr($link, strpos($link, 'token=') + 6);
+    q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash('provisional-1', PASSWORD_BCRYPT), $id]); // para que pueda pedir restablecer
+    password_reset_request('ines@x.test');
+    $u = password_reset_user($invite);
+    q('DELETE FROM throttle');
+    return eq($id, (int) ($u['id'] ?? 0));
 });
 check('el registro tarda lo mismo exista o no el correo (los dos caminos envían un correo; mínimo 300 ms)', function () {
     q('DELETE FROM throttle');

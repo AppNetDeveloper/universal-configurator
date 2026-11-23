@@ -146,6 +146,11 @@ check('login de admin lleva al panel', function () use ($adm, &$adminCsrf) {
     $adminCsrf = Browser::csrf($p['body']);
     return eq('/admin', loc($r)) && eq(200, $p['status']) && eq(true, str_contains($p['body'], 'Borradores'));
 });
+check('tras el login queda la cookie de dispositivo de confianza (HttpOnly, SameSite=Lax, 90 días)', function () use ($BASE) {
+    $b = new Browser($BASE);
+    $r = $b->post('/entrar', ['_csrf' => Browser::csrf($b->get('/')['body']), 'email' => 'admin@demo.test', 'password' => 'admin-12345']);
+    return eq(1, preg_match('/Set-Cookie: uc_trust=\d+\.\d+\.[a-f0-9]{64};[^\n]*HttpOnly/i', $r['headers'])) && eq(1, preg_match('/uc_trust=[^\n]*SameSite=Lax/i', $r['headers']));
+});
 check('el panel pinta catálogo, tipos, ajustes, tokens y actividad', function () use ($adm) {
     foreach (['/admin/catalogo' => 'Línea', '/admin/tipos' => 'Cajonera 3 cajones', '/admin/ajustes' => 'IVA', '/admin/tokens' => 'Nuevo token', '/admin/actividad' => 'sample.load', '/admin/usuarios' => 'admin@demo.test', '/admin/configuraciones' => 'Filtrar'] as $p => $txt) {
         $r = $adm->get($p);
