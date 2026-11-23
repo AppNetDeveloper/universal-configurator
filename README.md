@@ -20,13 +20,19 @@ El diseño completo (datos, reglas, acceso, pantallas, MCP) está en [`docs/DISE
 
 ## Cómo se ve
 
-| Configurar en la tablet | El precio por tramo, también con 58,5 cm |
+| Elegir el modelo (ilustraciones propias, el acabado como color) | Ajustar los módulos: 58,5 cm y un ancho entre tramos |
 |---|---|
-| ![Paso 2 en tablet](docs/capturas/paso2-tablet.png) | ![Cajonera de 58,5 cm](docs/capturas/paso2-tablet-58-5.png) |
+| ![Paso 1: familias](docs/capturas/paso1-familias-escritorio.png) | ![Paso 2 en la tablet](docs/capturas/paso2-hueco-de-tramo-tablet.png) |
 
-| Despiece por fórmulas en el panel | En el móvil |
+| Tramos y despiece por fórmulas en el panel | Ficha con despiece y lista de corte |
 |---|---|
-| ![Despiece en el panel](docs/capturas/panel-despiece-vivo-tablet.png) | ![Paso 2 en móvil](docs/capturas/paso2-movil.png) |
+| ![Tipo de módulo](docs/capturas/panel-tipo-tramos-despiece-escritorio.png) | ![Ficha de una configuración](docs/capturas/panel-ficha-tablet.png) |
+
+| En el móvil | Panel de inicio |
+|---|---|
+| ![Paso 2 en el móvil](docs/capturas/paso2-modulos-movil.png) | ![Panel](docs/capturas/panel-inicio-escritorio.png) |
+
+Todas las pantallas, comentadas: [`docs/CAPTURAS.md`](docs/CAPTURAS.md).
 
 ## Requisitos
 
@@ -46,8 +52,9 @@ sudo ./install.sh --domain=configurador.miempresa.com --email=yo@miempresa.com -
 `deploy/apache.example` o `deploy/caddy.example`) y abre la dirección en el navegador: el instalador comprueba los
 requisitos y crea `data/config.php`, la base de datos y la cuenta de administración. Para que solo instale quien tiene
 acceso al servidor, pide un **código de un solo uso** que deja en `data/install-code.txt` (`cat data/install-code.txt`). Marca «Cargar datos de ejemplo»
-para empezar con una cocina de 3 modelos (recta, en L y paralela), 4 colores y 9 tipos de módulo; también se cargan
-después desde **Panel → Ajustes**.
+para empezar con tres familias de ejemplo —cocinas (recta, en L y paralela), armarios (corredera y batiente) y baños
+(mueble de lavabo suspendido y columna)— con sus acabados, 16 tipos de módulo con medidas reales, tramos, despiece e
+ilustraciones; también se cargan después desde **Panel → Ajustes**.
 
 **Desde la línea de órdenes** (como el usuario de PHP):
 
@@ -55,7 +62,12 @@ después desde **Panel → Ajustes**.
 UC_PASSWORD='…' php bin/uc install --empresa="Mi empresa" --email=yo@miempresa.com --url=https://configurador.miempresa.com --sample
 php bin/uc token --name=ADRI --email=yo@miempresa.com --scopes=read,write   # token MCP (se muestra una vez)
 php bin/uc reset-link --email=persona@miempresa.com                          # enlace para poner contraseña
+php bin/uc demo                                                               # SOLO para enseñar la app: ver abajo
 ```
+
+`bin/uc demo` carga una **demostración**: los datos de ejemplo, 3 comerciales y 4 clientes ficticios (`@example.com`,
+contraseña común `demo-2026-clave`) y 12 configuraciones de las tres familias (aceptadas, en borrador y una anulada).
+Nunca se ejecuta sola y se niega si ya está cargada. No la uses en una instalación real.
 
 **Para desarrollar**: `php -S 127.0.0.1:8190 -t public public/index.php`.
 
