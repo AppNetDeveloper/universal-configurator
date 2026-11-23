@@ -1,5 +1,25 @@
 # Cambios
 
+## 0.3.1
+
+Arreglos de una revisión de seguridad independiente (cada uno con su prueba, primero en rojo).
+
+- **root no ejecuta lo que puede escribir el servidor web.** `bin/uc` se niega a correr como root (salvo `install`,
+  que antes de tocar `data/` pasa al dueño de `data/`). Terminar una actualización: sin `uid`, con un `pending.json`
+  que sea un enlace o con un `rollback.php` que no sea del mismo usuario, no se hace. Los textos dicen
+  `sudo -u www-data php bin/uc …`; con el código del instalador, se actualiza con `sudo ./install.sh` de la versión
+  nueva. Una actualización lanzada como root con la 0.3.0 la termina el servidor web en la siguiente visita.
+- **Actualizaciones:** el paquete se comprueba (sha256) y se extrae de la misma copia privada.
+- **Límites atómicos:** `throttle()` cuenta y comprueba en una sola sentencia (antes, con peticiones simultáneas,
+  entraban 15 peticiones de presupuesto con un límite de 5). Requisito nuevo: SQLite 3.35.
+- **Compartir y cambiar con límite:** `config_share` 60 por hora (el mismo día da el mismo enlace y una sola fila en
+  la actividad); cambios y deshacer, 600 llamadas cada 10 minutos por persona o conexión.
+- **Restaurar:** las imágenes se vuelven a codificar con GD (sin GD, una copia con imágenes no se restaura); el tope
+  anti «zip bomb» cuenta lo que de verdad se descomprime y cada archivo tiene que ocupar lo que declara.
+- **`page` gigantesco** ya no da 500 (API, panel, MCP).
+- **Copias con nombre aleatorio** y `data/` más cerrada si Apache no lee `.htaccess` (el manual explica
+  `AllowOverride None`).
+
 ## 0.3.0
 
 **El cliente final en el móvil**
