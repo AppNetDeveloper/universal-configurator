@@ -164,6 +164,37 @@ check('una imagen enorme (más de ' . IMAGE_MAX_SIDE . ' px de lado) no se resta
     return false;
 });
 
+/** Cambia en el zip (cabecera local y directorio central) el tamaño DECLARADO de $name: así se disfraza una «zip bomb». */
+$lie = function (string $zipName, string $name, int $size): void {
+    $f = bk_dir() . '/' . $zipName;
+    $b = (string) file_get_contents($f);
+    for ($p = strpos($b, "PK\x01\x02"); $p !== false; $p = strpos($b, "PK\x01\x02", $p + 4)) {
+        $nl = unpack('v', substr($b, $p + 28, 2))[1];
+        if (substr($b, $p + 46, $nl) !== $name) continue;
+        $local = unpack('V', substr($b, $p + 42, 4))[1];
+        $b = substr_replace($b, pack('V', $size), $p + 24, 4);
+        $b = substr_replace($b, pack('V', $size), $local + 22, 4);
+    }
+    file_put_contents($f, $b);
+};
+check('zip bomb: un archivo que dice ocupar poco y descomprimido ocupa más se rechaza (no se descomprime entero)', function () use ($mkzip, $db0, $m0, $dbOnly, $lie, $snapshot) {
+    $before = $snapshot();
+    $zip = $mkzip(['configurator.sqlite' => $db0], $dbOnly($m0));
+    $lie($zip, 'configurator.sqlite', 100);
+    try { backup_restore($zip, 'RESTAURAR'); } catch (UcError $e) { return eq(true, str_contains($e->getMessage(), 'tamaño'), $e->getMessage()) && eq($before, $snapshot()); }
+    return false;
+});
+check('zip bomb: el tope cuenta lo que de verdad se descomprime, sumando todos los archivos', function () use ($mkzip, $db0, $m0, $dbOnly) {
+    $GLOBALS['uc_bk_max_unpacked'] = strlen($db0) + 1000; // la base cabe; la base y otra cosa grande, no
+    $big = str_repeat('x', 5000);
+    $n = 'uploads/' . str_repeat('e', 24) . '.png';
+    $m = $dbOnly($m0);
+    $m['files'][$n] = ['sha256' => hash('sha256', $big), 'size' => strlen($big)];
+    try { backup_restore($mkzip(['configurator.sqlite' => $db0, $n => $big], $m), 'RESTAURAR'); } catch (UcError $e) { return eq(true, str_contains($e->getMessage(), 'demasiado grande'), $e->getMessage()); }
+    finally { unset($GLOBALS['uc_bk_max_unpacked']); }
+    return false;
+});
+
 // Cifrado al descargar y subida
 $enc = sys_get_temp_dir() . '/uc-enc-' . getmypid();
 check_error('contraseña de cifrado corta', fn() => bk_encrypt_file(bk_dir() . '/' . $b['name'], $enc, 'corta'), '10 caracteres');

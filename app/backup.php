@@ -215,6 +215,12 @@ function bk_decrypt_file(string $src, string $dst, string $password): void
  * manifest de esta aplicación, esquema no más nuevo que el código, cada archivo con su sha256 y la base íntegra.
  * @return array el manifest
  */
+/** Tope de lo descomprimido, sumando todos los archivos (las pruebas lo bajan para no fabricar gigas). */
+function bk_max_unpacked(): int
+{
+    return (int) ($GLOBALS['uc_bk_max_unpacked'] ?? BK_MAX_UNPACKED);
+}
+
 function bk_validate_extract(string $zipFile, string $work): array
 {
     $z = new ZipArchive();
@@ -222,6 +228,7 @@ function bk_validate_extract(string $zipFile, string $work): array
     try {
         if ($z->numFiles > BK_MAX_ENTRIES) throw new UcError(t('La copia tiene demasiados archivos ({n}).', ['n' => $z->numFiles]));
         $names = [];
+        $declared = [];
         $total = 0;
         for ($i = 0; $i < $z->numFiles; $i++) {
             $st = $z->statIndex($i);
@@ -231,8 +238,9 @@ function bk_validate_extract(string $zipFile, string $work): array
             if ((($attr >> 16) & 0170000) === 0120000) throw new UcError(t('La copia trae un enlace simbólico: «{n}». No se ha cambiado nada.', ['n' => $name]));
             if (isset($names[$name])) throw new UcError(t('La copia trae «{n}» dos veces.', ['n' => $name]));
             $names[$name] = $i;
+            $declared[$name] = (int) $st['size'];
             $total += (int) $st['size'];
-            if ($total > BK_MAX_UNPACKED) throw new UcError(t('La copia descomprimida es demasiado grande.'));
+            if ($total > bk_max_unpacked()) throw new UcError(t('La copia descomprimida es demasiado grande.'));
         }
         $m = json_decode((string) $z->getFromName('manifest.json'), true);
         if (!is_array($m) || ($m['app'] ?? '') !== 'universal-configurator' || !is_array($m['files'] ?? null)) throw new UcError(t('Esta no es una copia del configurador (falta su manifest.json).'));
@@ -246,6 +254,7 @@ function bk_validate_extract(string $zipFile, string $work): array
         sort($listed);
         sort($present);
         if ($listed !== $present) throw new UcError(t('Los archivos de la copia no coinciden con su manifest.json.'));
+        $written = 0;
         foreach ($present as $rel) {
             // Un config.php (copias de antes) NUNCA se escribe en disco: solo se comprueba su huella y se ignora.
             $dest = $rel === 'config.php' ? null : "$work/$rel";
@@ -255,15 +264,21 @@ function bk_validate_extract(string $zipFile, string $work): array
             if (!$in || !$out) throw new UcError(t('No se pudo extraer «{n}».', ['n' => $rel]));
             $ctx = hash_init('sha256');
             $size = 0;
+            // Se cuenta lo que DE VERDAD sale (el tamaño de la cabecera lo escribe quien hizo el zip): nunca más de lo
+            // declarado por archivo, ni más del tope sumando todos.
             while (!feof($in)) {
                 $c = (string) fread($in, BK_CHUNK);
+                if ($c === '') break;
                 $size += strlen($c);
-                if ($size > BK_MAX_UNPACKED) throw new UcError(t('La copia descomprimida es demasiado grande.'));
+                $written += strlen($c);
+                if ($size > $declared[$rel]) throw new UcError(t('«{n}» ocupa más de lo que dice el zip (tamaño declarado {d}): la copia está dañada o trucada. No se ha cambiado nada.', ['n' => $rel, 'd' => $declared[$rel]]));
+                if ($written > bk_max_unpacked()) throw new UcError(t('La copia descomprimida es demasiado grande.'));
                 hash_update($ctx, $c);
                 fwrite($out, $c);
             }
             fclose($in);
             fclose($out);
+            if ($size !== $declared[$rel]) throw new UcError(t('«{n}» no ocupa lo que dice el zip (tamaño declarado {d}, real {r}): la copia está dañada o trucada. No se ha cambiado nada.', ['n' => $rel, 'd' => $declared[$rel], 'r' => $size]));
             if (!hash_equals((string) ($m['files'][$rel]['sha256'] ?? ''), hash_final($ctx))) {
                 throw new UcError(t('La huella (sha256) de «{n}» no coincide: la copia está dañada o la han cambiado. No se ha cambiado nada.', ['n' => $rel]));
             }
