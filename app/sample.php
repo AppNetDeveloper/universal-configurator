@@ -91,10 +91,10 @@ function seed_sample(): void
             'layouts' => [
                 'linea' => [['Frente', 'x', 0, 0, [['CFR', 60], ['B1P', 40], ['FRG', 80], ['LVV', 60], ['CAJ3', 60], ['CHO', 60]]],
                     ['Altos del frente', 'x', 600, 0, [['A1P', 40], ['A2P', 80], ['A1P', 60]]]],
-                'duo' => [['Pared A', 'x', 0, 0, [['FRG', 80], ['LVV', 60], ['CAJ3', 60], ['B1P', 40]]], ['Pared B', 'y', 0, 600, [['B2P', 80], ['CHO', 60], ['CFR', 60]]],
-                    ['Altos pared A', 'x', 0, 0, [['A2P', 80], ['A1P', 60], ['A1P', 60]]]],
-                'escala' => [['Frente A', 'x', 0, 0, [['CFR', 60], ['FRG', 100], ['LVV', 60], ['B1P', 40]]], ['Frente B', 'x', 0, 2400, [['CHO', 60], ['CAJ3', 60], ['B2P', 100], ['CAJ3', 80]]],
-                    ['Altos frente A', 'x', 600, 0, [['A2P', 100], ['A1P', 60]]]],
+                'duo' => [['Frente', 'x', 0, 0, [['FRG', 80], ['LVV', 60], ['CAJ3', 60], ['B1P', 40]]], ['Lateral', 'y', 0, 600, [['B2P', 80], ['CHO', 60], ['CFR', 60]]],
+                    ['Altos del frente', 'x', 0, 0, [['A2P', 80], ['A1P', 60], ['A1P', 60]]]],
+                'escala' => [['Lado del fregadero', 'x', 0, 0, [['CFR', 60], ['FRG', 100], ['LVV', 60], ['B1P', 40]]], ['Lado de la placa', 'x', 0, 2400, [['CHO', 60], ['CAJ3', 60], ['B2P', 100], ['CAJ3', 80]]],
+                    ['Altos del fregadero', 'x', 600, 0, [['A2P', 100], ['A1P', 60]]]],
             ],
         ]);
         // Escala lleva una cajonera de gama alta: tramos propios que sustituyen a los de la familia en sus acabados.

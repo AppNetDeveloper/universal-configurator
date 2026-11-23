@@ -1,6 +1,8 @@
 <?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php
 /** @var string $content @var string $title @var ?array $user @var bool $guest @var array $flashes @var string $section @var bool $wide */
+$bare = !empty($bare); // portada y enlace compartido: solo la marca arriba
+$client = $guest || ($user['role'] ?? '') === 'cliente';
 $empresa = setting('empresa');
 $logo = setting('logo');
 ?><!doctype html>
@@ -15,14 +17,16 @@ $logo = setting('logo');
 <link rel="stylesheet" href="<?= e(asset('/assets/app.css')) ?>">
 <script src="<?= e(asset('/assets/app.js')) ?>" defer></script>
 </head>
-<body class="<?= $section !== '' ? 'is-admin' : '' ?>">
+<body class="<?= trim(($section !== '' ? 'is-admin' : '') . ($client ? ' is-client' : '') . ($bare ? ' is-bare' : '')) ?>">
 <header class="topbar">
   <div class="wrap topbar-in">
     <a class="brand" href="/">
       <?php if ($logo !== ''): ?><img src="<?= e($logo) ?>" alt="" class="brand-logo"><?php else: ?><span class="mark" aria-hidden="true"></span><?php endif; ?>
       <span><?= e($empresa) ?></span>
     </a>
-    <?php if ($user || $guest): ?>
+    <?php if ($guest && !$user && !$bare): ?>
+    <nav class="mainnav" aria-label="<?= te('Menú') ?>"><a href="/configurar"><?= te('Empezar de nuevo') ?></a></nav>
+    <?php elseif ($user && !$bare): ?>
     <nav class="mainnav" aria-label="<?= te('Menú') ?>">
       <a href="/configurar"<?= str_starts_with((string) ($_SERVER['REQUEST_URI'] ?? ''), '/configurar') ? ' aria-current="page"' : '' ?>><?= te('Configurar') ?></a>
       <a href="/mis-configuraciones"<?= str_starts_with((string) ($_SERVER['REQUEST_URI'] ?? ''), '/mis-') ? ' aria-current="page"' : '' ?>><?= te('Mis configuraciones') ?></a>

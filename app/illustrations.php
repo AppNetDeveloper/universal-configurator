@@ -146,3 +146,58 @@ function ill_bathroom(string $f, string $e, string $ink): string
     $s .= "<rect x='166' y='14' width='34' height='104' rx='2' fill='$f' stroke='$e' stroke-width='1.5'/><rect x='192' y='56' width='2.5' height='18' rx='1' fill='$ink'/>";
     return $s;
 }
+
+// ---------------------------------------------------------------- iconos de módulo
+
+/**
+ * Tipo de icono de un tipo de módulo, por su familia y su nombre (sin campo nuevo en el catálogo: el fabricante no
+ * tiene que elegir nada). Lo desconocido cae en un bajo de una puerta.
+ */
+function module_icon_kind(array $type): string
+{
+    $n = mb_strtolower((string) ($type['name'] ?? ''));
+    $f = mb_strtolower((string) ($type['family'] ?? ''));
+    $two = str_contains($n, '2 puertas') || str_contains($n, 'dos puertas');
+    return match (true) {
+        str_contains($n, 'fregadero') => 'sink',
+        str_contains($n, 'lavavajillas') => 'dishwasher',
+        str_contains($n, 'horno') => 'oven',
+        str_contains($n, 'frigor') || str_contains($n, 'nevera') => 'fridge',
+        str_contains($n, 'lavabo') => 'basin',
+        str_contains($n, 'corredera') => 'sliding',
+        str_contains($n, 'esquina') || str_contains($n, 'rincón') => 'corner',
+        str_contains($n, 'cajon') => $f === 'interior' ? 'inner-drawers' : 'drawers',
+        $f === 'alto' => $two ? 'wall2' : 'wall1',
+        $f === 'armario' => $two ? 'wardrobe2' : 'wardrobe1',
+        $f === 'columna', $f === 'baño' && str_contains($n, 'columna') => 'tall',
+        default => $two ? 'base2' : 'base1',
+    };
+}
+
+/** Icono SVG (48×48, trazo con currentColor) de un tipo de módulo. Plantillas fijas: nada del usuario dentro. */
+function module_icon_svg(array $type): string
+{
+    $k = module_icon_kind($type);
+    $box = fn($x, $y, $w, $h) => "<rect x='$x' y='$y' width='$w' height='$h' rx='2'/>";
+    $line = fn($x1, $y1, $x2, $y2) => "<path d='M{$x1} {$y1}L{$x2} {$y2}'/>";
+    $knob = fn($x, $y, $h = 6) => "<path d='M$x $y v$h' stroke-width='2.4'/>";
+    $body = match ($k) {
+        'base1' => $box(12, 14, 24, 26) . $line(12, 18, 36, 18) . $knob(31, 23),
+        'base2' => $box(8, 14, 32, 26) . $line(8, 18, 40, 18) . $line(24, 18, 24, 40) . $knob(21, 24) . $knob(27, 24),
+        'drawers' => $box(10, 14, 28, 26) . $line(10, 22, 38, 22) . $line(10, 31, 38, 31) . "<path d='M20 18h8M20 26.5h8M20 35.5h8' stroke-width='2.4'/>",
+        'sink' => $box(8, 18, 32, 22) . "<path d='M6 18h36'/><path d='M18 18v-3a4 4 0 0 1 8 0' />" . $line(24, 18, 24, 40) . $knob(21, 26) . $knob(27, 26),
+        'dishwasher' => $box(10, 14, 28, 26) . "<path d='M10 20h28'/><circle cx='15' cy='17' r='1' fill='currentColor'/><path d='M19 24h10' stroke-width='2.4'/>",
+        'oven' => $box(12, 4, 24, 40) . "<rect x='15' y='17' width='18' height='13' rx='1.5'/>" . $line(12, 33, 36, 33) . "<path d='M17 14h14' stroke-width='2.4'/>",
+        'fridge' => $box(12, 4, 24, 40) . $line(12, 26, 36, 26) . $knob(31, 12, 8) . $knob(31, 30, 8),
+        'tall' => $box(15, 4, 18, 40) . $line(15, 18, 33, 18) . $knob(29, 24, 7),
+        'wall1' => $box(12, 8, 24, 22) . $knob(31, 21) . "<path d='M8 36h32' stroke-dasharray='2 3'/>",
+        'wall2' => $box(8, 8, 32, 22) . $line(24, 8, 24, 30) . $knob(21, 21) . $knob(27, 21) . "<path d='M8 36h32' stroke-dasharray='2 3'/>",
+        'wardrobe1' => $box(14, 4, 20, 40) . $knob(29, 20, 8),
+        'wardrobe2' => $box(8, 4, 32, 40) . $line(24, 4, 24, 44) . $knob(21, 20, 8) . $knob(27, 20, 8),
+        'sliding' => $box(6, 4, 36, 40) . "<rect x='9' y='7' width='17' height='34' rx='1'/><rect x='22' y='7' width='17' height='34' rx='1' fill='currentColor' fill-opacity='.12'/><path d='M14 24h4M30 24h4'/>",
+        'corner' => "<path d='M8 44V10h18v34M26 10l14-6v34l-14 6'/>" . $knob(21, 22, 8),
+        'inner-drawers' => "<rect x='6' y='6' width='36' height='36' rx='2' stroke-dasharray='3 3'/>" . $box(11, 20, 26, 20) . $line(11, 30, 37, 30) . "<path d='M20 25h8M20 35h8' stroke-width='2.4'/>",
+        'basin' => "<path d='M6 18h36'/><path d='M16 18a8 4 0 0 0 16 0'/><path d='M24 14v-4h4'/>" . $box(9, 22, 30, 16) . $line(9, 30, 39, 30) . "<path d='M20 26h8M20 34h8' stroke-width='2.4'/>",
+    };
+    return '<svg class="mod-ico" viewBox="0 0 48 48" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' . $body . '</svg>';
+}

@@ -47,18 +47,50 @@ function keep_old(array $post): void
     $_SESSION['old'] = array_diff_key($post, ['password' => 1, 'password2' => 1, '_csrf' => 1, 'admin_password' => 1]);
 }
 
+/** Barra de progreso fina: Elige → Ajusta → Listo (los pasos hechos se pueden tocar). */
 function steps_bar(int $active, ?string $code = null): string
 {
-    $labels = [1 => t('Modelo'), 2 => t('Módulos'), 3 => t('Resumen y precio')];
+    $labels = [1 => t('Elige'), 2 => t('Ajusta'), 3 => t('Listo')];
     $links = [1 => '/configurar', 2 => $code ? "/configurar/$code" : null, 3 => $code ? "/configurar/$code/resumen" : null];
-    $h = '<nav class="steps" aria-label="' . te('Progreso') . '">';
+    $h = '<nav class="steps" aria-label="' . te('Paso {n} de 3', ['n' => $active]) . '"><ol>';
     foreach ($labels as $n => $l) {
         $cls = 'step' . ($n === $active ? ' active' : '') . ($n < $active ? ' done' : '');
-        $inner = '<span class="dot">' . $n . '</span><span class="lbl">' . e($l) . '</span>';
-        $h .= $links[$n] && $n !== $active ? '<a class="' . $cls . '" href="' . e($links[$n]) . '">' . $inner . '</a>'
-            : '<span class="' . $cls . '"' . ($n === $active ? ' aria-current="step"' : '') . '>' . $inner . '</span>';
+        $inner = '<span class="bar" aria-hidden="true"></span><span class="lbl">' . $n . ' · ' . e($l) . '</span>';
+        $h .= '<li class="' . $cls . '">' . ($links[$n] && $n < $active ? '<a href="' . e($links[$n]) . '">' . $inner . '</a>'
+            : '<span' . ($n === $active ? ' aria-current="step"' : '') . '>' . $inner . '</span>') . '</li>';
     }
-    return $h . '</nav>';
+    return $h . '</ol></nav>';
+}
+
+/** ¿Quien mira es el cliente final (invitado o cliente con cuenta)? Para él, nada de jerga de oficina. */
+function viewer_is_client(?array $viewer): bool
+{
+    return $viewer !== null && ($viewer['kind'] === 'guest' || ($viewer['user']['role'] ?? '') === 'cliente');
+}
+
+/** Hijos visibles de un nodo; si solo hay uno y no es final, se baja solo (no se pregunta lo que no se puede elegir). */
+function step1_skip_single(?int $parent): ?int
+{
+    for ($i = 0; $i < 20; $i++) {
+        $kids = node_children($parent);
+        if (count($kids) !== 1 || node_is_final((int) $kids[0]['id'])) return $parent;
+        $parent = (int) $kids[0]['id'];
+    }
+    return $parent;
+}
+
+/** «Atrás» desde un nivel: el antepasado más cercano con más de una opción (o el inicio). */
+function step1_back(?int $nodeId): ?string
+{
+    if ($nodeId === null) return null;
+    $n = node_get($nodeId);
+    while ($n) {
+        $up = $n['parent_id'] === null ? null : (int) $n['parent_id'];
+        if (count(node_children($up)) > 1) return '/configurar' . ($up ? '?nodo=' . $up : '');
+        if ($up === null) return null;
+        $n = node_get($up);
+    }
+    return null;
 }
 
 /** Muestra de un nodo: color (#RRGGBB) o imagen. */
@@ -92,7 +124,22 @@ function front_handle(string $path, string $method): void
     // --- acceso
     if ($path === '/') {
         if ($u || is_guest()) redirect('/configurar');
+        // Para el cliente final, lo primero es «Empezar» (si se permite configurar sin cuenta); entrar, discreto debajo.
+        if (guest_allowed()) { render('home', ['title' => t('Configura tus muebles'), 'roots' => node_children(null), 'bare' => true]); return; }
         render('login', ['title' => t('Entrar'), 'providers' => auth_providers_enabled()]);
+        return;
+    }
+    if ($path === '/entrar' && !$post) {
+        if ($u) redirect(is_admin($u) ? '/admin' : '/configurar');
+        render('login', ['title' => t('Entrar'), 'providers' => auth_providers_enabled(), 'team' => true]);
+        return;
+    }
+    if (preg_match('#^/ver/([A-Za-z0-9.\-]{1,80})$#', $path, $m)) {
+        $cfg = share_resolve($m[1]);
+        if (!$cfg) { render('message', ['title' => t('Enlace no válido'), 'message' => t('Este enlace ha caducado o ya no está disponible. Pide uno nuevo a quien te lo envió.')], 404); return; }
+        header('X-Robots-Tag: noindex, nofollow');
+        header('Referrer-Policy: no-referrer');
+        render('shared', ['title' => t('Configuración compartida'), 'cfg' => config_view($cfg), 'bare' => true]);
         return;
     }
     if ($path === '/entrar' && $post) {
@@ -169,11 +216,14 @@ function front_handle(string $path, string $method): void
         }
         $parent = isset($_GET['nodo']) && ctype_digit((string) $_GET['nodo']) ? (int) $_GET['nodo'] : null;
         if ($parent !== null && (!node_get($parent) || !node_branch_active($parent))) { flash(t('Esa opción ya no está disponible.'), 'error'); redirect('/configurar'); }
+        $skip = step1_skip_single($parent);
+        if ($skip !== $parent) redirect('/configurar?nodo=' . $skip); // un nivel con una sola opción no se pregunta
         $nodes = array_map(fn($n) => $n + ['is_final' => node_is_final((int) $n['id'])], node_children($parent));
-        render('step1', ['title' => t('Configurar'), 'parent' => $parent ? node_get($parent) : null, 'path' => $parent ? node_path($parent) : [], 'nodes' => $nodes]);
+        render('step1', ['title' => t('Configurar'), 'parent' => $parent ? node_get($parent) : null, 'path' => $parent ? node_path($parent) : [], 'nodes' => $nodes,
+            'back' => step1_back($parent), 'client' => viewer_is_client($viewer)]);
         return;
     }
-    if (preg_match('#^/configurar/(UC-[A-Z0-9]{8})(/(resumen|aceptar|duplicar))?$#', $path, $m)) {
+    if (preg_match('#^/configurar/(UC-[A-Z0-9]{8})(/(resumen|aceptar|duplicar|pedir|compartir))?$#', $path, $m)) {
         $viewer = front_require_viewer();
         $code = $m[1];
         $action = $m[3] ?? '';
@@ -183,6 +233,16 @@ function front_handle(string $path, string $method): void
                 unset($_SESSION['old']);
                 flash(t('Configuración aceptada. Precio guardado.'));
                 redirect("/configurar/$code/resumen");
+            }
+            if ($post && $action === 'pedir') {
+                $r = config_request($code, $viewer, $_POST);
+                unset($_SESSION['old']);
+                $_SESSION['requested'][$code] = ['mailed' => $r['mailed']];
+                redirect("/configurar/$code/resumen");
+            }
+            if ($post && $action === 'compartir') {
+                $_SESSION['share'][$code] = config_share($code, $viewer);
+                redirect("/configurar/$code/resumen#compartir");
             }
             if ($post && $action === 'duplicar') {
                 $cfg = config_copy($code, $viewer);
@@ -196,11 +256,15 @@ function front_handle(string $path, string $method): void
             flash($ex->getMessage(), 'error');
             redirect("/configurar/$code/resumen");
         }
+        $client = viewer_is_client($viewer);
         if ($action === 'resumen' || $cfg['status'] !== 'draft') {
-            render('step3', ['title' => t('Resumen {c}', ['c' => $code]), 'cfg' => $cfg, 'isGuest' => $viewer['kind'] === 'guest']);
+            render('step3', ['title' => t('Tu presupuesto'), 'cfg' => $cfg, 'isGuest' => $viewer['kind'] === 'guest', 'client' => $client,
+                'share' => $_SESSION['share'][$code] ?? null, 'requested' => $_SESSION['requested'][$code] ?? null]);
             return;
         }
-        render('step2', ['title' => t('Módulos {c}', ['c' => $code]), 'cfg' => $cfg, 'types' => module_types_for_node($cfg['node']['id']), 'wide' => true]);
+        $types = array_map(fn($t) => $t + ['icon' => module_icon_svg($t)], module_types_for_node($cfg['node']['id']));
+        render('step2', ['title' => t('Ajusta los módulos'), 'cfg' => $cfg, 'types' => $types, 'client' => $client,
+            'canUndo' => !empty($_SESSION['undo'][$code]), 'wide' => true]);
         return;
     }
     if ($path === '/mis-configuraciones') {

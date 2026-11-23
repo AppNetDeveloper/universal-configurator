@@ -1,39 +1,40 @@
 <?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
-<?php /** @var ?array $parent @var array $path @var array $nodes */ ?>
+<?php /** @var ?array $parent @var array $path @var array $nodes @var ?string $back @var bool $client */
+$finals = $nodes && !array_filter($nodes, fn($n) => !$n['is_final']);
+$title = !$parent ? t('¿Qué quieres configurar?') : ($finals ? t('Elige el acabado') : t('Elige el modelo de {n}', ['n' => mb_strtolower($parent['name'])]));
+?>
 <?= steps_bar(1) ?>
 <div class="step-head">
-  <nav class="crumbs" aria-label="<?= te('Ruta') ?>">
-    <a href="/configurar"><?= te('Inicio') ?></a>
-    <?php foreach ($path as $p): ?><span aria-hidden="true">›</span><a href="/configurar?nodo=<?= (int) $p['id'] ?>"><?= e($p['name']) ?></a><?php endforeach; ?>
+  <?php if ($path): ?>
+  <nav class="crumbs" aria-label="<?= te('Lo que has elegido') ?>">
+    <?php foreach ($path as $i => $p): ?><?= $i ? '<span aria-hidden="true">›</span>' : '' ?><span><?= e($p['name']) ?></span><?php endforeach; ?>
   </nav>
-  <h1><?= $parent ? te('Elige en «{n}»', ['n' => $parent['name']]) : te('¿Qué quieres configurar?') ?></h1>
-  <p class="hint"><?= te('Toca una opción. Al llegar a la última se carga su composición de módulos por defecto.') ?></p>
+  <?php endif; ?>
+  <h1><?= e($title) ?></h1>
 </div>
 <?php if (!$nodes): ?>
   <div class="empty"><p><?= te('Todavía no hay nada en el catálogo.') ?></p><?php if (is_admin(current_user())): ?><a class="btn btn-primary" href="/admin/ajustes"><?= te('Cargar datos de ejemplo') ?></a><?php endif; ?></div>
 <?php else: ?>
-<?php $colorsOnly = !array_filter($nodes, fn($n) => !preg_match('/^#[0-9a-fA-F]{6}$/', (string) $n['image'])); ?>
-<div class="grid-nodes<?= $colorsOnly ? ' is-colors' : '' ?>">
+<ul class="choices<?= $finals ? ' is-finishes' : '' ?>" role="list">
   <?php foreach ($nodes as $n): ?>
+    <li>
     <?php if ($n['is_final']): ?>
-      <form method="post" action="/configurar" class="node-card-form">
-        <?= csrf_field() ?><input type="hidden" name="node_id" value="<?= (int) $n['id'] ?>">
-        <button type="submit" class="node-card is-final">
-          <?= node_visual($n['image']) ?>
-          <span class="node-name"><?= e($n['name']) ?></span>
-          <?php if ($n['description'] !== ''): ?><span class="node-desc"><?= e($n['description']) ?></span><?php endif; ?>
-          <span class="node-go"><?= te('Empezar con este') ?> →</span>
+      <form method="post" action="/configurar"><?= csrf_field() ?><input type="hidden" name="node_id" value="<?= (int) $n['id'] ?>">
+        <button type="submit" class="choice">
+          <span class="choice-pic"><?= node_visual($n['image']) ?: '<span class="choice-blank"></span>' ?></span>
+          <span class="choice-name"><?= e($n['name']) ?></span>
+          <?php if ($n['description'] !== ''): ?><span class="choice-desc"><?= e($n['description']) ?></span><?php endif; ?>
         </button>
       </form>
     <?php else: ?>
-      <a class="node-card" href="/configurar?nodo=<?= (int) $n['id'] ?>">
-        <?= node_visual($n['image']) ?>
-        <span class="node-name"><?= e($n['name']) ?></span>
-        <?php if ($n['description'] !== ''): ?><span class="node-desc"><?= e($n['description']) ?></span><?php endif; ?>
-        <span class="node-go"><?= te('Ver opciones') ?> →</span>
+      <a class="choice" href="/configurar?nodo=<?= (int) $n['id'] ?>">
+        <span class="choice-pic"><?= node_visual($n['image']) ?: '<span class="choice-blank"></span>' ?></span>
+        <span class="choice-name"><?= e($n['name']) ?></span>
+        <?php if ($n['description'] !== ''): ?><span class="choice-desc"><?= e($n['description']) ?></span><?php endif; ?>
       </a>
     <?php endif; ?>
+    </li>
   <?php endforeach; ?>
-</div>
+</ul>
 <?php endif; ?>
-<?php if ($parent): ?><p class="back-row"><a class="btn btn-ghost" href="/configurar<?= $parent['parent_id'] ? '?nodo=' . (int) $parent['parent_id'] : '' ?>">← <?= te('Atrás') ?></a></p><?php endif; ?>
+<?php if ($back !== null): ?><p class="back-row"><a class="btn btn-ghost" href="<?= e($back) ?>">← <?= te('Atrás') ?></a></p><?php endif; ?>

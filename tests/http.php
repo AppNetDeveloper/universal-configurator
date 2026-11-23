@@ -225,7 +225,7 @@ check('paso 1: elegir hasta un nodo final crea el borrador', function () use ($a
     $home = $ana->get('/configurar')['body'];
     preg_match('#/configurar\?nodo=(\d+)#', $home, $m1);
     $models = $ana->get('/configurar?nodo=' . $m1[1])['body'];
-    if (!preg_match('#/configurar\?nodo=(\d+)">(?:(?!</a>).)*?<span class="node-name">Dúo<#s', $models, $m2)) throw new RuntimeException('no aparece Dúo');
+    if (!preg_match('#/configurar\?nodo=(\d+)">(?:(?!</a>).)*?<span class="choice-name">Dúo<#s', $models, $m2)) throw new RuntimeException('no aparece Dúo');
     $duo = $m2[1];
     $colors = $ana->get('/configurar?nodo=' . $duo)['body'];
     preg_match('#name="node_id" value="(\d+)"#', $colors, $m3);
@@ -332,13 +332,13 @@ check('el registro de actividad recoge el uso del MCP', fn() => eq(true, str_con
 $idFrom = function (string $html, string $re) { if (!preg_match($re, $html, $m)) throw new RuntimeException("no encontrado: $re"); return (int) $m[1]; };
 $armario = 0;
 check('panel: crear, editar y desactivar un nodo', function () use ($adm, $adminCsrf, $idFrom, &$armario) {
-    $adm->post('/admin/catalogo/crear', ['_csrf' => $adminCsrf, 'name' => 'Armario', 'description' => 'A medida']);
-    $armario = $idFrom($adm->get('/admin/catalogo')['body'], '#/admin/catalogo/(\d+)">Armario<#');
-    $adm->post("/admin/catalogo/$armario", ['_csrf' => $adminCsrf, 'name' => 'Armarios', 'slug' => '', 'description' => 'A medida', 'image' => '#AABBCC']);
+    $adm->post('/admin/catalogo/crear', ['_csrf' => $adminCsrf, 'name' => 'Vestidor', 'description' => 'A medida']);
+    $armario = $idFrom($adm->get('/admin/catalogo')['body'], '#/admin/catalogo/(\d+)">Vestidor<#');
+    $adm->post("/admin/catalogo/$armario", ['_csrf' => $adminCsrf, 'name' => 'Vestidores', 'slug' => '', 'description' => 'A medida', 'image' => '#AABBCC']);
     $adm->post("/admin/catalogo/$armario/activar", ['_csrf' => $adminCsrf, 'back' => "/catalogo/$armario", 'active' => '']);
     $p = $adm->get("/admin/catalogo/$armario")['body'];
     $adm->post("/admin/catalogo/$armario/activar", ['_csrf' => $adminCsrf, 'back' => "/catalogo/$armario", 'active' => '1']);
-    return eq(true, str_contains($p, 'Armarios') && str_contains($p, 'Desactivado'));
+    return eq(true, str_contains($p, 'Vestidores') && str_contains($p, 'Desactivado'));
 });
 $puerta = 0;
 check('panel: hijo, mover y borrar', function () use ($adm, $adminCsrf, $idFrom, &$armario, &$puerta) {
@@ -467,6 +467,92 @@ check('registro por HTTP: mismo mensaje exista o no; el enlace del correo activa
     $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '21', 'mail_transport' => 'log', 'smtp_port' => '587', 'url_publica' => $BASE]);
     return eq(303, $r1['status']) && eq(303, $r2['status']) && eq(true, str_contains($msg1, 'Si el correo es válido') && str_contains($msg2, 'Si el correo es válido'))
         && eq('/configurar', loc($r3)) && eq(false, str_contains($form['body'], 'caducado'));
+});
+
+// --- cliente final (v0.3): portada, paso 1 sin niveles de una opción, paso 2 sin jerga, pedir el presupuesto, enlace
+$setGuest = function (bool $on) use ($adm, $adminCsrf, $BASE) {
+    $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '21', 'mail_transport' => 'log', 'smtp_port' => '587', 'url_publica' => $BASE] + ($on ? ['permitir_invitado' => '1'] : []));
+};
+check('portada: con invitado permitido, «Empezar» primero y «Entrar» discreto; sin él, el formulario de entrar', function () use ($setGuest, $BASE) {
+    $setGuest(true);
+    $on = (new Browser($BASE))->get('/')['body'];
+    $setGuest(false);
+    $off = (new Browser($BASE))->get('/')['body'];
+    $team = (new Browser($BASE))->get('/entrar');
+    return eq(true, str_contains($on, 'action="/invitado"') && str_contains($on, 'Empezar') && str_contains($on, 'href="/entrar"')) && eq(false, str_contains($on, 'name="password"'))
+        && eq(true, str_contains($off, 'name="password"')) && eq(200, $team['status']) && eq(true, str_contains($team['body'], 'name="password"'));
+});
+$guestB = null;
+$gcode = '';
+check('invitado: menú sin «Mis configuraciones» ni «Salir»; paso 2 sin código ni referencias a la vista', function () use ($setGuest, $BASE, &$guestB, &$gcode) {
+    $setGuest(true);
+    $guestB = new Browser($BASE);
+    $home = $guestB->get('/')['body'];
+    $guestB->post('/invitado', ['_csrf' => Browser::csrf($home)]);
+    $p1 = $guestB->get('/configurar')['body'];
+    preg_match('#/configurar\?nodo=(\d+)#', $p1, $m);
+    $models = $guestB->get('/configurar?nodo=' . $m[1])['body'];
+    preg_match('#/configurar\?nodo=(\d+)">(?:(?!</a>).)*?<span class="choice-name">Dúo<#s', $models, $m2);
+    $colors = $guestB->get('/configurar?nodo=' . $m2[1])['body'];
+    preg_match('#name="node_id" value="(\d+)"#', $colors, $m3);
+    $gcode = basename(loc($guestB->post('/configurar', ['_csrf' => Browser::csrf($colors), 'node_id' => $m3[1]])));
+    $p2 = $guestB->get("/configurar/$gcode")['body'];
+    $visible = preg_replace('#<script type="application/json".*?</script>#s', '', $p2);
+    return eq(false, str_contains($p1, '/mis-configuraciones'), 'mis') && eq(false, str_contains($p1, 'action="/salir"'), 'salir') && eq(true, str_contains($p1, 'Empezar de nuevo'))
+        && eq(false, (bool) preg_match('#>[^<]*' . $gcode . '#', $visible), 'código a la vista') && eq(false, str_contains($visible, 'Borrador'), 'borrador') && eq(true, str_contains($p2, 'configurador.js'));
+});
+check('cada pantalla del cliente pesa menos de 100 KB (HTML + CSS + JS, sin comprimir)', function () use (&$guestB, &$gcode, $BASE) {
+    $assets = 0;
+    foreach (['/assets/app.css', '/assets/app.js', '/assets/configurador.js'] as $a) $assets += strlen((new Browser($BASE))->get($a)['body']);
+    $sizes = [strlen($guestB->get('/configurar')['body']), strlen($guestB->get("/configurar/$gcode")['body']), strlen($guestB->get("/configurar/$gcode/resumen")['body'])];
+    if (max($sizes) + $assets >= 100 * 1024) throw new RuntimeException('pesa ' . (max($sizes) + $assets) . ' bytes');
+    return true;
+});
+check('paso 3 del invitado: «Quiero este presupuesto», sin «Aceptar»; aceptar a mano da 403', function () use (&$guestB, &$gcode) {
+    $p = $guestB->get("/configurar/$gcode/resumen")['body'];
+    $acc = $guestB->post("/configurar/$gcode/aceptar", ['_csrf' => Browser::csrf($p)]);
+    $after = $guestB->get("/configurar/$gcode/resumen")['body'];
+    return eq(true, str_contains($p, 'Quiero este presupuesto') && str_contains($p, 'name="website"')) && eq(false, str_contains($p, 'Aceptar configuración'))
+        && eq(303, $acc['status']) && eq(true, str_contains($after, 'comercial o del administrador'));
+});
+$shareUrl = '';
+check('WhatsApp sin JavaScript: el formulario lleva al enlace firmado con la URL pública y al botón de WhatsApp', function () use (&$guestB, &$gcode, &$shareUrl, $BASE) {
+    $p = $guestB->get("/configurar/$gcode/resumen")['body'];
+    $guestB->post("/configurar/$gcode/compartir", ['_csrf' => Browser::csrf($p)]);
+    $after = $guestB->get("/configurar/$gcode/resumen")['body'];
+    if (!preg_match('#value="(' . preg_quote($BASE, '#') . '/ver/UC-[A-Z2-9]{8}\.\d+\.[a-f0-9]{32})"#', $after, $m)) throw new RuntimeException('sin enlace');
+    $shareUrl = $m[1];
+    return eq(true, str_contains($after, 'https://wa.me/?text='));
+});
+check('pedir el presupuesto: honeypot no guarda; con datos y consentimiento queda pedido y lo dice', function () use (&$guestB, &$gcode, $adm) {
+    $p = $guestB->get("/configurar/$gcode/resumen")['body'];
+    $guestB->post("/configurar/$gcode/pedir", ['_csrf' => Browser::csrf($p), 'name' => 'Bot', 'phone' => '600 000 000', 'consent' => '1', 'website' => 'x']);
+    $still = $guestB->get("/configurar/$gcode/resumen")['body'];
+    $r = $guestB->post("/configurar/$gcode/pedir", ['_csrf' => Browser::csrf($still), 'name' => 'Rocío Ibáñez', 'phone' => '677 120 984', 'email' => '', 'consent' => '1']);
+    $done = $guestB->get("/configurar/$gcode/resumen")['body'];
+    return eq(true, str_contains($still, 'Quiero este presupuesto')) && eq(303, $r['status']) && eq(true, str_contains($done, 'Te llamaremos'))
+        && eq(true, str_contains($adm->get('/admin/configuraciones?status=requested')['body'], $gcode));
+});
+check('el enlace compartido abre sin sesión, sin datos del cliente; cambiado no abre', function () use (&$shareUrl, $BASE) {
+    $path = substr($shareUrl, strlen($BASE));
+    $r = (new Browser($BASE))->get($path);
+    $bad = (new Browser($BASE))->get(substr($path, 0, -1) . (str_ends_with($path, '0') ? '1' : '0'));
+    return eq(200, $r['status']) && eq(false, str_contains($r['body'], 'Rocío') || str_contains($r['body'], '677 120')) && eq(true, str_contains($r['body'], 'noindex'))
+        && eq(true, str_contains($r['headers'], 'no-referrer')) && eq(404, $bad['status']);
+});
+check('un nivel con una sola opción no se pregunta y «Atrás» no lleva a un bucle', function () use ($adm, $adminCsrf, &$guestB) {
+    $roots = [];
+    preg_match_all('#/admin/catalogo/(\d+)"[^>]*>([^<]+)</a>#', $adm->get('/admin/catalogo')['body'], $mm, PREG_SET_ORDER);
+    foreach ($mm as $x) if (in_array(trim($x[2]), ['Armarios', 'Baños', 'Vestidores'], true)) $roots[trim($x[2])] ??= $x[1]; // la raíz sale antes que cualquier hijo
+    $roots = array_values($roots);
+    $toggle = fn(string $v) => array_map(fn($id) => $adm->post("/admin/catalogo/$id/activar", ['_csrf' => $adminCsrf, 'active' => $v, 'back' => '/catalogo']), $roots);
+    $res = $toggle('');
+    $r = $guestB->get('/configurar');
+    if ($r['status'] !== 303) throw new RuntimeException('roots=' . json_encode($roots) . ' toggle=' . json_encode(array_map(fn($x) => [$x['status'], loc($x)], $res)) . ' choices=' . json_encode(preg_match_all('#choice-name">([^<]+)#', $r['body'], $cn) ? $cn[1] : []) . ' url=' . loc($r));
+    $page = $guestB->get(loc($r))['body'];
+    $toggle('1');
+    return eq(3, count($roots)) && eq(303, $r['status']) && eq(1, preg_match('#^/configurar\?nodo=\d+$#', loc($r))) && eq(true, str_contains($page, 'Elige el modelo'))
+        && eq(false, str_contains($page, '← '));
 });
 
 check('G: con la base bloqueada durante una actualización de esquema, 503 «actualizando» sin trazas', function () use ($BASE, $data) {
