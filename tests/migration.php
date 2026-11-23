@@ -40,7 +40,7 @@ file_put_contents(UC_DATA . '/config.php', "<?php return ['secret' => 'x'];");
 ensure_schema();
 
 $cols = fn(string $t) => array_column(rows("PRAGMA table_info($t)"), 'name');
-check('versión de esquema al día (6)', fn() => eq('6', val("SELECT value FROM meta WHERE key = 'schema_version'")));
+check('versión de esquema al día (7)', fn() => eq('7', val("SELECT value FROM meta WHERE key = 'schema_version'")));
 check('tramos en mm (30–40 cm → 300–400 mm), sin columnas en cm', fn() => eq([[300, 400], [410, 600], [300, 600]], array_map(fn($r) => [(int) $r['from_mm'], (int) $r['to_mm']], rows('SELECT * FROM price_tiers ORDER BY id')))
     && eq(false, in_array('from_cm', $cols('price_tiers'), true)));
 check('el CHECK desde ≤ hasta sigue valiendo en mm', function () {
@@ -72,6 +72,24 @@ check('una base en esquema 4 (sin login_backoff) recibe la tabla al actualizar',
     q("UPDATE meta SET value = '4' WHERE key = 'schema_version'");
     ensure_schema();
     return eq('login_backoff', val("SELECT name FROM sqlite_master WHERE name = 'login_backoff'"));
+});
+check('v7: el estado «requested» y el estado de trabajo existen; las aceptadas quedan «nuevo»; ids y paredes intactos', function () {
+    q("UPDATE configurations SET status = 'requested' WHERE code = 'UC-BBBBBBBB'");
+    $a = row("SELECT * FROM configurations WHERE code = 'UC-AAAAAAAA'");
+    return eq('requested', val("SELECT status FROM configurations WHERE code = 'UC-BBBBBBBB'")) && eq('nuevo', $a['work_status']) && eq(1, (int) $a['id'])
+        && eq(2, (int) val('SELECT COUNT(*) FROM config_walls')) && eq(3, (int) val('SELECT COUNT(*) FROM config_items')) && eq([], rows('PRAGMA foreign_key_check'))
+        && eq(1, (int) val('PRAGMA foreign_keys'));
+});
+check('v7: un estado inventado sigue sin entrar; tabla de leads', function () use ($cols) {
+    try { q("UPDATE configurations SET status = 'otro' WHERE id = 1"); return false; } catch (PDOException) {}
+    return eq(true, in_array('work_status', $cols('leads'), true));
+});
+check('v7: borrar una configuración sigue borrando sus paredes (cascada viva tras reconstruir)', function () {
+    q("INSERT INTO configurations (code, node_id, status, created_at, updated_at) VALUES ('UC-CCCCCCCC', 2, 'draft', '2026-11-04', '2026-11-04')");
+    $id = (int) val("SELECT id FROM configurations WHERE code = 'UC-CCCCCCCC'");
+    q("INSERT INTO config_walls (configuration_id, name) VALUES (?, 'X')", [$id]);
+    q('DELETE FROM configurations WHERE id = ?', [$id]);
+    return eq(0, (int) val('SELECT COUNT(*) FROM config_walls WHERE configuration_id = ?', [$id]));
 });
 check('migrar dos veces no cambia nada', function () {
     migrate();

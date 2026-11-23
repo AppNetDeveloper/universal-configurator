@@ -14,7 +14,11 @@ declare(strict_types=1);
  * total e IVA) que leen todos (API, panel, JSON, CSV, MCP); ya no se edita: se duplica.
  */
 
-const CONFIG_STATUSES = ['draft' => 'Borrador', 'accepted' => 'Aceptada', 'cancelled' => 'Anulada'];
+const CONFIG_STATUSES = ['draft' => 'Borrador', 'requested' => 'Presupuesto pedido', 'accepted' => 'Aceptada', 'cancelled' => 'Anulada'];
+/** Lo que ve el cliente final (sin jerga de oficina). */
+const CONFIG_STATUSES_CLIENT = ['draft' => 'Sin enviar', 'requested' => 'Presupuesto pedido', 'accepted' => 'Confirmada', 'cancelled' => 'Anulada'];
+/** Quién acepta (cierra la venta): el equipo. El cliente final pide el presupuesto (config_request). */
+const ACCEPT_ROLES = ['admin', 'comercial'];
 const CONFIG_OPS = ['set_width', 'remove', 'add', 'replace', 'customer'];
 const CONFIG_MAX_OPS = 100;      // operaciones por petición
 const CONFIG_MAX_LINES = 300;    // líneas (módulos) por configuración
@@ -248,7 +252,8 @@ function config_view(array $cfg): array
         'total' => eur($p['total']), 'total_cents' => $p['total'], 'total_text' => money($p['total']), 'tax_rate' => $p['tax_rate'],
         'tax' => eur($p['tax']), 'tax_cents' => $p['tax'], 'total_with_tax' => eur($p['total_with_tax']), 'total_with_tax_cents' => $p['total_with_tax'],
         'created_at' => $cfg['created_at'], 'updated_at' => $cfg['updated_at'], 'accepted_at' => $cfg['accepted_at'],
-    ];
+        'requested_at' => $cfg['requested_at'] ?? null,
+    ] + work_view($cfg);
 }
 
 function config_get(string $code, ?array $viewer): array
@@ -291,12 +296,19 @@ function config_list(?array $viewer, array $f, int $page = 1, int $perPage = 25)
         $where[] = 'c.user_id IS NULL AND c.code IN (' . implode(',', array_fill(0, count($codes), '?')) . ')';
         array_push($args, ...$codes);
     }
+    $scopeCount = count($where);
+    $scopeArgs = count($args);
     $status = (string) ($f['status'] ?? '');
     if ($status !== '') {
-        if (!isset(CONFIG_STATUSES[$status])) throw new UcError(t('Estado «{v}» no válido: draft, accepted o cancelled.', ['v' => $status]));
+        if (!isset(CONFIG_STATUSES[$status])) throw new UcError(t('Estado «{v}» no válido: {l}.', ['v' => $status, 'l' => implode(', ', array_keys(CONFIG_STATUSES))]));
         $where[] = 'c.status = ?';
         $args[] = $status;
     }
+    $ws = (string) ($f['work_status'] ?? '');
+    if ($ws !== '') { work_status_check($ws); $where[] = 'c.work_status = ?'; $args[] = $ws; }
+    // Pendientes de trabajar: aceptadas (o con presupuesto pedido) con el trabajo «nuevo» o «en curso».
+    $pend = !empty($f['pendientes']);
+    if ($pend) $where[] = "c.status IN ('accepted','requested') AND c.work_status IN ('nuevo','en_curso')";
     foreach (['from' => '>=', 'to' => '<='] as $k => $op) {
         $d = trim((string) ($f[$k] ?? ''));
         if ($d === '') continue;
@@ -316,16 +328,22 @@ function config_list(?array $viewer, array $f, int $page = 1, int $perPage = 25)
     $total = (int) val("SELECT COUNT(*) FROM configurations c $sqlWhere", $args);
     $pages = (int) ceil($total / $perPage);
     $page = max(1, $page);
-    $rs = rows("SELECT c.* FROM configurations c $sqlWhere ORDER BY c.created_at DESC, c.id DESC LIMIT $perPage OFFSET " . (($page - 1) * $perPage), $args);
+    // Las pendientes primero (nuevo, luego en curso); dentro, las más recientes.
+    $order = "CASE WHEN c.status IN ('accepted','requested') AND c.work_status = 'nuevo' THEN 0 WHEN c.status IN ('accepted','requested') AND c.work_status = 'en_curso' THEN 1 ELSE 2 END, c.created_at DESC, c.id DESC";
+    $rs = rows("SELECT c.* FROM configurations c $sqlWhere ORDER BY $order LIMIT $perPage OFFSET " . (($page - 1) * $perPage), $args);
     $items = array_map(function ($cfg) {
         $p = config_pricing($cfg);
         $owner = $cfg['user_id'] !== null ? user_by_id((int) $cfg['user_id']) : null;
         return ['code' => $cfg['code'], 'status' => $cfg['status'], 'status_label' => t(CONFIG_STATUSES[$cfg['status']]),
             'node' => node_path_text((int) $cfg['node_id']), 'customer_name' => $cfg['customer_name'], 'customer_email' => $cfg['customer_email'],
             'user' => $owner ? $owner['name'] : null, 'count' => $p['count'], 'valid' => $p['valid'],
-            'total' => eur($p['total']), 'total_cents' => $p['total'], 'created_at' => $cfg['created_at'], 'updated_at' => $cfg['updated_at'], 'accepted_at' => $cfg['accepted_at']];
+            'total' => eur($p['total']), 'total_cents' => $p['total'], 'created_at' => $cfg['created_at'], 'updated_at' => $cfg['updated_at'], 'accepted_at' => $cfg['accepted_at']]
+            + work_view($cfg);
     }, $rs);
-    return ['items' => $items, 'page' => $page, 'per_page' => $perPage, 'total' => $total, 'pages' => $pages];
+    $pendingWhere = array_slice($where, 0, $scopeCount);
+    $pendingWhere[] = "c.status IN ('accepted','requested') AND c.work_status IN ('nuevo','en_curso')";
+    $pending = (int) val('SELECT COUNT(*) FROM configurations c WHERE ' . implode(' AND ', $pendingWhere), array_slice($args, 0, $scopeArgs));
+    return ['items' => $items, 'page' => $page, 'per_page' => $perPage, 'total' => $total, 'pages' => $pages, 'pending' => $pending];
 }
 
 // ---------------------------------------------------------------- cambiar
@@ -333,6 +351,7 @@ function config_list(?array $viewer, array $f, int $page = 1, int $perPage = 25)
 function config_require_draft(array $cfg): void
 {
     if ($cfg['status'] === 'accepted') throw new UcError(t('La configuración {c} está aceptada: ya no se edita. Duplícala para hacer cambios (botón «Duplicar» o config_create con copy_of).', ['c' => $cfg['code']]), [], 409);
+    if ($cfg['status'] === 'requested') throw new UcError(t('La configuración {c} tiene el presupuesto pedido: su precio quedó guardado y ya no se edita. Duplícala para hacer cambios.', ['c' => $cfg['code']]), [], 409);
     if ($cfg['status'] !== 'draft') throw new UcError(t('La configuración {c} está anulada: no se edita. Duplícala para hacer cambios.', ['c' => $cfg['code']]), [], 409);
 }
 
@@ -503,6 +522,10 @@ function config_apply_one_checked(array $cfg, array $op, array &$ctx = []): arra
 function config_accept(string $code, ?array $viewer, array $customer = [], bool $consent = false): array
 {
     $cfg = config_find($code, $viewer);
+    if (($viewer['kind'] ?? '') !== 'user' || !in_array($viewer['user']['role'] ?? '', ACCEPT_ROLES, true)) {
+        throw new UcError(t('Aceptar (cerrar la venta) es del comercial o del administrador. El cliente pide el presupuesto: «Quiero este presupuesto».'), [], 403);
+    }
+    if ($cfg['status'] === 'requested') return config_accept_requested($cfg, $viewer);
     config_require_draft($cfg);
     $guest = $viewer['kind'] === 'guest';
     $line = fn($v) => trim((string) preg_replace('/[\r\n\t]+/', ' ', (string) $v));
@@ -515,24 +538,26 @@ function config_accept(string $code, ?array $viewer, array $customer = [], bool 
     }
     $p = tx(function () use ($cfg, $cust, $consent) {
         config_require_draft(row('SELECT * FROM configurations WHERE id = ?', [$cfg['id']]) ?? $cfg); // se vuelve a mirar dentro de la transacción
-        $p = precio_configuracion((int) $cfg['node_id'], config_walls_input((int) $cfg['id']));
-        if ($p['count'] === 0) throw new UcError(t('La configuración no tiene ningún módulo: añade al menos uno antes de aceptar.'));
-        if (!$p['valid']) {
-            $bad = [];
-            foreach ($p['walls'] as $w) foreach ($w['items'] as $it) if (!$it['valid']) $bad[] = t('línea {id}: {e}', ['id' => $it['id'], 'e' => $it['error']]);
-            throw new UcError(t('No se puede aceptar: hay medidas sin tramo. {lista}', ['lista' => implode(' · ', $bad)]));
-        }
-        $badParts = [];
-        foreach ($p['walls'] as $w) foreach ($w['items'] as $it) {
-            foreach (piezas_de_linea($it) as $pp) if ($pp['error'] !== null) $badParts[] = t('línea {id}: {e}', ['id' => $it['id'], 'e' => $pp['error']]);
-        }
-        if ($badParts) throw new UcError(t('No se puede aceptar: hay piezas que no se pueden fabricar con esas medidas. {lista}', ['lista' => implode(' · ', $badParts)]));
-        config_freeze((int) $cfg['id'], $p, 'accepted', ['accepted_at' => now(), 'consent_at' => $consent ? now() : null,
+        $p = config_checked_pricing($cfg, t('aceptar'));
+        config_freeze((int) $cfg['id'], $p, 'accepted', ['accepted_at' => now(), 'consent_at' => $consent ? now() : null, 'work_status' => 'nuevo', 'work_at' => now(),
             'customer_name' => mb_substr($cust['customer_name'], 0, 160), 'customer_email' => mb_substr($cust['customer_email'], 0, 160), 'customer_phone' => mb_substr($cust['customer_phone'], 0, 160)]);
         return $p;
     });
     audit('config.accept', $cfg['code'] . ' · ' . money($p['total']) . ' · ' . viewer_label($viewer));
     return config_get($code, $viewer);
+}
+
+/**
+ * Aceptar una configuración con el presupuesto pedido: el precio ya quedó guardado al pedirlo (es el que vio el
+ * cliente) y no se recalcula; solo cambia el estado y el trabajo vuelve a «nuevo».
+ */
+function config_accept_requested(array $cfg, array $viewer): array
+{
+    $n = q("UPDATE configurations SET status = 'accepted', accepted_at = ?, updated_at = ?, work_status = 'nuevo', work_at = ? WHERE id = ? AND status = 'requested'",
+        [now(), now(), now(), $cfg['id']])->rowCount();
+    if ($n !== 1) throw new UcError(t('La configuración ya no tiene el presupuesto pedido.'), [], 409);
+    audit('config.accept', $cfg['code'] . ' · ' . money((int) $cfg['total']) . ' · ' . viewer_label($viewer) . ' · desde presupuesto pedido');
+    return config_get($cfg['code'], $viewer);
 }
 
 /**
@@ -643,4 +668,67 @@ function config_export_cut_csv(array $view): string
             implode(' | ', array_map(fn($f) => "{$f['module']} {$f['width_cm']} cm (línea {$f['item_id']}, {$f['wall']}) ×{$f['qty']}", $r['from']))];
     }
     return csv_join($rows);
+}
+
+// ---------------------------------------------------------------- deshacer (pantalla del configurador)
+
+const UNDO_DEPTH = 10;
+
+/** Foto de lo que cambian las operaciones: las líneas de cada pared (con su id, orden y medidas) y los datos del cliente. */
+function config_state(int $cfgId): array
+{
+    $items = rows('SELECT i.id, i.config_wall_id, i.module_type_id, i.width_mm, i.height_mm, i.depth_mm, i.sort FROM config_items i
+        JOIN config_walls w ON w.id = i.config_wall_id WHERE w.configuration_id = ? ORDER BY i.id', [$cfgId]);
+    $c = row('SELECT customer_name, customer_email, customer_phone, notes FROM configurations WHERE id = ?', [$cfgId]) ?? [];
+    return ['items' => array_map(fn($r) => array_map(fn($v) => $v === null ? null : (string) $v, $r), $items), 'customer' => $c];
+}
+
+function config_state_sig(array $state): string
+{
+    return hash('sha256', json_encode($state));
+}
+
+/**
+ * Operaciones desde la pantalla, guardando antes una foto para «Deshacer» (pila de 10 por configuración, en la sesión).
+ * La foto guarda también la huella de cómo quedó: deshacer solo si nadie la ha cambiado después desde otro sitio.
+ */
+function config_apply_ops_undoable(string $code, array $ops, array $viewer): array
+{
+    $cfg = config_find($code, $viewer);
+    $before = config_state((int) $cfg['id']);
+    $res = config_apply_ops($code, $ops, $viewer);
+    $stack = (array) ($_SESSION['undo'][$cfg['code']] ?? []);
+    $stack[] = ['before' => $before, 'after' => config_state_sig(config_state((int) $cfg['id']))];
+    $_SESSION['undo'][$cfg['code']] = array_slice($stack, -UNDO_DEPTH);
+    return $res + ['can_undo' => true];
+}
+
+/** Deshace el último cambio hecho desde esta pantalla: vuelve a poner las líneas como estaban (mismo orden y medidas). */
+function config_undo(string $code, array $viewer): array
+{
+    $cfg = config_find($code, $viewer);
+    config_require_draft($cfg);
+    $stack = (array) ($_SESSION['undo'][$cfg['code']] ?? []);
+    $snap = array_pop($stack);
+    if (!$snap) throw new UcError(t('No hay nada que deshacer.'), [], 409);
+    tx(function () use ($cfg, $snap) {
+        config_require_draft(row('SELECT * FROM configurations WHERE id = ?', [$cfg['id']]) ?? $cfg);
+        if (config_state_sig(config_state((int) $cfg['id'])) !== $snap['after']) {
+            throw new UcError(t('La configuración ha cambiado desde otro sitio después de tu último cambio: no se puede deshacer.'), ['undo_stale' => true], 409);
+        }
+        q('DELETE FROM config_items WHERE config_wall_id IN (SELECT id FROM config_walls WHERE configuration_id = ?)', [$cfg['id']]);
+        foreach ($snap['before']['items'] as $it) {
+            $row = ['config_wall_id' => (int) $it['config_wall_id'], 'module_type_id' => (int) $it['module_type_id'], 'width_mm' => (int) $it['width_mm'],
+                'height_mm' => $it['height_mm'] === null ? null : (int) $it['height_mm'], 'depth_mm' => $it['depth_mm'] === null ? null : (int) $it['depth_mm'], 'sort' => (int) $it['sort']];
+            // El mismo id si sigue libre (la pantalla lo conoce); si otra configuración lo ocupó entretanto, uno nuevo.
+            if (!val('SELECT 1 FROM config_items WHERE id = ?', [(int) $it['id']])) $row = ['id' => (int) $it['id']] + $row;
+            insert('config_items', $row);
+        }
+        $c = $snap['before']['customer'];
+        if ($c) update('configurations', ['customer_name' => $c['customer_name'], 'customer_email' => $c['customer_email'], 'customer_phone' => $c['customer_phone'], 'notes' => $c['notes']], 'id = ?', [$cfg['id']]);
+        config_touch((int) $cfg['id']);
+    });
+    $_SESSION['undo'][$cfg['code']] = $stack;
+    audit('config.undo', $cfg['code']);
+    return ['config' => config_get($cfg['code'], $viewer), 'can_undo' => (bool) $stack];
 }

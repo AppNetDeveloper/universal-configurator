@@ -24,6 +24,7 @@ require UC_ROOT . '/app/api.php';
 require UC_ROOT . '/app/mcp.php';
 require UC_ROOT . '/app/admin.php';
 require UC_ROOT . '/app/install.php';
+require UC_ROOT . '/app/leads.php';
 require UC_ROOT . '/app/sample.php';
 
 date_default_timezone_set((string) config('timezone', 'Europe/Madrid'));

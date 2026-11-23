@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 
 const UC_VERSION = '0.1.0';
-const UC_SCHEMA = 6;
+const UC_SCHEMA = 7;
 const UC_MAX_BODY = 256 * 1024; // cuerpo máximo de una petición a /api y /mcp
 const UC_AUTHOR_URL = 'https://www.bionicadri.com';
 
@@ -183,9 +183,11 @@ function migrate(): void
         id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL, node_id INTEGER NOT NULL REFERENCES nodes(id),
         user_id INTEGER NULL REFERENCES users(id),
         customer_name TEXT NOT NULL DEFAULT '', customer_email TEXT NOT NULL DEFAULT '', customer_phone TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','accepted','cancelled')),
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','requested','accepted','cancelled')),
         total INTEGER NOT NULL DEFAULT 0, tax_rate REAL NOT NULL DEFAULT 21, notes TEXT NOT NULL DEFAULT '',
-        consent_at TEXT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, accepted_at TEXT NULL);
+        consent_at TEXT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, accepted_at TEXT NULL,
+        requested_at TEXT NULL, work_status TEXT NULL CHECK (work_status IN ('nuevo','en_curso','hecho')),
+        work_note TEXT NOT NULL DEFAULT '', work_by TEXT NOT NULL DEFAULT '', work_at TEXT NULL);
     CREATE INDEX IF NOT EXISTS configurations_user ON configurations (user_id, created_at);
     CREATE TABLE IF NOT EXISTS config_walls (
         id INTEGER PRIMARY KEY, configuration_id INTEGER NOT NULL REFERENCES configurations(id) ON DELETE CASCADE,
@@ -207,6 +209,21 @@ function migrate(): void
     SQL);
     // v3: medidas en mm (un decimal en cm = mm enteros), medidas del tipo y despiece.
     migrate_v3();
+    // v7: estado «requested» (presupuesto pedido por el cliente) y estado de trabajo; tabla de leads.
+    migrate_v7();
+    db()->exec(<<<SQL
+    CREATE TABLE IF NOT EXISTS leads (
+        id INTEGER PRIMARY KEY, configuration_id INTEGER NULL REFERENCES configurations(id) ON DELETE SET NULL,
+        user_id INTEGER NULL REFERENCES users(id), name TEXT NOT NULL, email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'configurador', consent_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'nuevo' CHECK (status IN ('nuevo','contactado','cerrado')),
+        work_status TEXT NOT NULL DEFAULT 'nuevo' CHECK (work_status IN ('nuevo','en_curso','hecho')),
+        work_note TEXT NOT NULL DEFAULT '', work_by TEXT NOT NULL DEFAULT '', work_at TEXT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS leads_created ON leads (created_at);
+    CREATE INDEX IF NOT EXISTS leads_config ON leads (configuration_id);
+    CREATE INDEX IF NOT EXISTS configurations_work ON configurations (status, work_status);
+    SQL);
     db()->exec(<<<SQL
     CREATE INDEX IF NOT EXISTS price_tiers_type ON price_tiers (module_type_id, node_id, from_mm);
     CREATE TABLE IF NOT EXISTS module_parts (
@@ -269,6 +286,47 @@ function migrate_v3(): void
             depth_mm = (SELECT depth_mm FROM module_types t WHERE t.id = config_items.module_type_id) WHERE height_mm IS NULL');
         insert('audit_log', ['at' => now(), 'actor' => 'sistema', 'action' => 'schema.v3', 'detail' => 'Medidas pasadas a mm; medidas de tipo y despiece añadidos']);
     });
+}
+
+/**
+ * Paso a v7 en una base existente: la columna status de configurations solo admitía draft, accepted y cancelled (un
+ * CHECK, que SQLite no deja cambiar). Se reconstruye la tabla con el estado nuevo «requested» y las columnas del estado
+ * de trabajo, conservando los id (paredes, líneas y piezas siguen apuntando a la misma fila). Con las claves ajenas
+ * apagadas mientras dura: si no, quitar la tabla vieja arrastraría en cascada sus paredes. Todo o nada; al final se
+ * comprueban las claves ajenas. Las aceptadas quedan con el estado de trabajo «nuevo». En una base nueva no hace nada.
+ */
+function migrate_v7(): void
+{
+    $sql = (string) val("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'configurations'");
+    if ($sql === '' || str_contains($sql, "'requested'")) return;
+    $pdo = db();
+    $pdo->exec('PRAGMA foreign_keys = OFF');
+    try {
+        tx(function () use ($pdo) {
+            $old = array_column(rows('PRAGMA table_info(configurations)'), 'name');
+            $pdo->exec(<<<SQL
+            CREATE TABLE configurations_v7 (
+                id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL, node_id INTEGER NOT NULL REFERENCES nodes(id),
+                user_id INTEGER NULL REFERENCES users(id),
+                customer_name TEXT NOT NULL DEFAULT '', customer_email TEXT NOT NULL DEFAULT '', customer_phone TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','requested','accepted','cancelled')),
+                total INTEGER NOT NULL DEFAULT 0, tax_rate REAL NOT NULL DEFAULT 21, notes TEXT NOT NULL DEFAULT '',
+                consent_at TEXT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, accepted_at TEXT NULL,
+                requested_at TEXT NULL, work_status TEXT NULL CHECK (work_status IN ('nuevo','en_curso','hecho')),
+                work_note TEXT NOT NULL DEFAULT '', work_by TEXT NOT NULL DEFAULT '', work_at TEXT NULL);
+            SQL);
+            $cols = implode(', ', $old);
+            $pdo->exec("INSERT INTO configurations_v7 ($cols) SELECT $cols FROM configurations");
+            $pdo->exec("UPDATE configurations_v7 SET work_status = 'nuevo' WHERE status = 'accepted'");
+            $pdo->exec('DROP TABLE configurations');
+            $pdo->exec('ALTER TABLE configurations_v7 RENAME TO configurations');
+            $pdo->exec('CREATE INDEX IF NOT EXISTS configurations_user ON configurations (user_id, created_at)');
+            if (rows('PRAGMA foreign_key_check')) throw new UcError('Migración v7: quedarían claves ajenas rotas; no se cambia nada.');
+            insert('audit_log', ['at' => now(), 'actor' => 'sistema', 'action' => 'schema.v7', 'detail' => 'Estado «presupuesto pedido», estado de trabajo y leads']);
+        });
+    } finally {
+        $pdo->exec('PRAGMA foreign_keys = ON');
+    }
 }
 
 function ensure_schema(): void

@@ -109,10 +109,13 @@ check('filtros de la lista: estado, texto y fechas', function () use ($vadmin) {
 });
 
 // --- aceptar y congelar
-check_error('el invitado acepta solo con nombre, correo, teléfono y consentimiento', fn() => config_accept($g['code'], $guest1, ['name' => 'Eva', 'email' => 'eva@x.test', 'phone' => '600'], false), 'protección de datos');
-check('el invitado acepta con sus datos y consentimiento', function () use ($g, $guest1) {
-    $r = config_accept($g['code'], $guest1, ['name' => 'Eva', 'email' => 'eva@x.test', 'phone' => '600 123 123'], true);
-    return eq('accepted', $r['status']) && eq('Eva', $r['customer']['name']);
+check_error('el invitado NO acepta (aceptar es del equipo): 403 con la salida buena', fn() => config_accept($g['code'], $guest1, ['name' => 'Eva', 'email' => 'eva@x.test', 'phone' => '600 123 123'], true), 'Quiero este presupuesto');
+check_error('el invitado pide el presupuesto solo con consentimiento', fn() => config_request($g['code'], $guest1, ['name' => 'Eva', 'phone' => '600 123 123'], false), 'protección de datos');
+check('el invitado pide el presupuesto: queda «presupuesto pedido», con precio guardado y un lead', function () use ($g, $guest1) {
+    $r = config_request($g['code'], $guest1, ['name' => 'Eva', 'email' => 'eva@x.test', 'phone' => '600 123 123', 'consent' => 1], false);
+    throttle_clear('lead:' . client_ip_key());
+    return eq('requested', $r['config']['status']) && eq(true, $r['config']['frozen']) && eq('Eva', $r['config']['customer']['name'])
+        && eq(true, $r['lead_id'] > 0) && eq('nuevo', val('SELECT work_status FROM leads WHERE id = ?', [$r['lead_id']]));
 });
 $before = config_get($code, $va);
 $acc = config_accept($code, $va);

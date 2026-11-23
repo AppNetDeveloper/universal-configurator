@@ -12,7 +12,10 @@ declare(strict_types=1);
  *   POST /api/configurations {node_id | copy_of}  crea un borrador (o duplica)
  *   GET  /api/configurations/{code}
  *   POST /api/configurations/{code}/ops           {op, …} o {ops: [{op, …}, …]}
- *   POST /api/configurations/{code}/accept        {name, email, phone, consent}
+ *   POST /api/configurations/{code}/accept        {name, email, phone, consent}   (comercial o admin)
+ *   POST /api/configurations/{code}/request       {name, phone, email?, message?, consent, website}  «Quiero este presupuesto»
+ *   POST /api/configurations/{code}/share         enlace de solo lectura (30 días) y el de WhatsApp
+ *   POST /api/configurations/{code}/undo          deshace el último cambio hecho desde esta pantalla
  *   POST /api/configurations/{code}/duplicate
  */
 
@@ -46,18 +49,24 @@ function api_dispatch(string $method, string $path, array $body, ?string $csrf):
                 return [201, ['ok' => true, 'config' => $cfg]];
             }
         }
-        if (preg_match('#^/api/configurations/(UC-[A-Za-z0-9]{8})(/(ops|accept|duplicate))?$#', $path, $m)) {
+        if (preg_match('#^/api/configurations/(UC-[A-Za-z0-9]{8})(/(ops|accept|duplicate|request|share|undo))?$#', $path, $m)) {
             $code = $m[1];
             $action = $m[3] ?? '';
             if ($method === 'GET' && $action === '') return [200, ['ok' => true, 'config' => config_get($code, $viewer)]];
             if ($method === 'POST' && $action === 'ops') {
                 $ops = isset($body['ops']) && is_array($body['ops']) ? $body['ops'] : [$body];
-                return [200, ['ok' => true] + config_apply_ops($code, $ops, $viewer)];
+                return [200, ['ok' => true] + config_apply_ops_undoable($code, $ops, $viewer)];
             }
             if ($method === 'POST' && $action === 'accept') {
                 $cfg = config_accept($code, $viewer, array_intersect_key($body, ['name' => 1, 'email' => 1, 'phone' => 1]), !empty($body['consent']));
                 return [200, ['ok' => true, 'config' => $cfg]];
             }
+            if ($method === 'POST' && $action === 'request') {
+                $r = config_request($code, $viewer, array_intersect_key($body, array_flip(['name', 'phone', 'email', 'message', 'consent', 'website'])));
+                return [200, ['ok' => true] + $r];
+            }
+            if ($method === 'POST' && $action === 'share') return [200, ['ok' => true] + config_share($code, $viewer)];
+            if ($method === 'POST' && $action === 'undo') return [200, ['ok' => true] + config_undo($code, $viewer)];
             if ($method === 'POST' && $action === 'duplicate') return [201, ['ok' => true, 'config' => config_copy($code, $viewer)]];
         }
         return [404, ['ok' => false, 'error' => t('Ruta de la API desconocida.')]];

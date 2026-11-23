@@ -188,23 +188,26 @@ function seed_demo(): array
     }
     $leaf = fn(string $model, string $finish) => (int) val('SELECT c.id FROM nodes c JOIN nodes m ON m.id = c.parent_id WHERE m.name = ? AND c.name = ?', [$model, $finish]);
     $type = fn(string $ref) => (int) val('SELECT id FROM module_types WHERE ref = ?', [$ref]);
-    // [dueño, modelo, acabado, cliente [nombre, correo, teléfono], cambios [[ref, ancho cm]] , estado, días atrás]
+    // [dueño, modelo, acabado, cliente [nombre, correo, teléfono], cambios [[ref, ancho cm]], estado, días atrás, trabajo [estado, nota]]
+    // Los clientes no aceptan (eso es del equipo): piden el presupuesto («requested») y dejan un lead.
     $plan = [
-        ['Laura Martín', 'Línea', 'Roble', ['Ana Belén Castro', 'anabelen@' . DEMO_DOMAIN, '611 204 377'], [['CAJ3', '58,5']], 'accepted', 21],
+        ['Laura Martín', 'Línea', 'Roble', ['Ana Belén Castro', 'anabelen@' . DEMO_DOMAIN, '611 204 377'], [['CAJ3', '58,5']], 'accepted', 21, ['hecho', 'Planos y presupuesto enviados; medición el día 18']],
         ['Laura Martín', 'Dúo', 'Blanco', ['Óscar Prieto', 'oscar.prieto@' . DEMO_DOMAIN, '622 418 905'], [['CAJ3', '50,5'], ['B1P', '45']], 'draft', 3],
-        ['Laura Martín', 'Corredera', 'Gris grafito', ['Lucía Herrera', 'lucia.h@' . DEMO_DOMAIN, '633 902 118'], [['ARCR', '215']], 'accepted', 14],
-        ['Diego Navarro', 'Escala', 'Antracita', ['Familia Romero', 'romero@' . DEMO_DOMAIN, '644 551 230'], [['B2P', '92,5']], 'accepted', 9],
+        ['Laura Martín', 'Corredera', 'Gris grafito', ['Lucía Herrera', 'lucia.h@' . DEMO_DOMAIN, '633 902 118'], [['ARCR', '215']], 'accepted', 14, ['en_curso', 'Planos hechos; falta confirmar el hueco de la puerta']],
+        ['Diego Navarro', 'Escala', 'Antracita', ['Familia Romero', 'romero@' . DEMO_DOMAIN, '644 551 230'], [['B2P', '92,5']], 'accepted', 9, ['hecho', 'Pedido pasado a taller']],
         ['Diego Navarro', 'Batiente', 'Roble natural', ['Iván Delgado', 'ivan.delgado@' . DEMO_DOMAIN, '655 013 772'], [['AR1P', '55']], 'draft', 2],
         ['Diego Navarro', 'Suspendido', 'Verde salvia', ['Nuria Campos', 'nuria.c@' . DEMO_DOMAIN, '666 330 481'], [['BLS', '90']], 'cancelled', 30],
         ['Sara Molina', 'Línea', 'Blanco', ['Hotel Mirador', 'compras@' . DEMO_DOMAIN, '966 120 340'], [['FRG', '100']], 'accepted', 6],
         ['Sara Molina', 'Doble seno', 'Roble claro', ['Clínica Dental Sur', 'admin@' . DEMO_DOMAIN, '952 778 120'], [['BLS', '110']], 'draft', 1],
         ['Javier Ortega', 'Dúo', 'Madera', [], [['B2P', '75']], 'draft', 4],
-        ['Elena Ruiz', 'Corredera', 'Arena', [], [['ARCR', '180,5']], 'accepted', 11],
+        ['Elena Ruiz', 'Corredera', 'Arena', ['Elena Ruiz', 'elena.ruiz@' . DEMO_DOMAIN, '677 401 220'], [['ARCR', '180,5']], 'requested', 11],
         ['Pablo Serrano', 'Suspendido', 'Blanco brillo', [], [['BCO', '40,5']], 'draft', 5],
-        ['Marta Gil', 'Batiente', 'Blanco nieve', [], [['AR2P', '95']], 'accepted', 8],
+        ['Marta Gil', 'Batiente', 'Blanco nieve', ['Marta Gil', 'marta.gil@' . DEMO_DOMAIN, '688 912 004'], [['AR2P', '95']], 'requested', 8],
     ];
     $n = 0;
-    foreach ($plan as [$owner, $model, $finish, $cust, $changes, $status, $daysAgo]) {
+    foreach ($plan as $row) {
+        [$owner, $model, $finish, $cust, $changes, $status, $daysAgo] = $row;
+        $work = $row[7] ?? null;
         $u = user_by_id($ids[$owner]);
         $v = ['kind' => 'user', 'user' => $u];
         $cfg = config_create($leaf($model, $finish), $v, $cust ? ['name' => $cust[0], 'email' => $cust[1], 'phone' => $cust[2]] : []);
@@ -214,12 +217,31 @@ function seed_demo(): array
             $ops[] = ['op' => 'add', 'wall_id' => $cfg['walls'][0]['id'], 'module_type_id' => $type($ref), 'width_cm' => $cm];
         }
         if ($ops) config_apply_ops($cfg['code'], $ops, $v);
-        if ($status === 'accepted') config_accept($cfg['code'], $v, $cust ? [] : ['name' => $u['name'], 'email' => $u['email'], 'phone' => '600 000 000']);
+        if ($status === 'accepted') config_accept($cfg['code'], $v);
+        if ($status === 'requested') config_request($cfg['code'], $v, ['name' => $cust[0], 'email' => $cust[1], 'phone' => $cust[2], 'consent' => 1], false);
+        if ($work) { Actor::set('MCP: ADRI (' . $u['email'] . ')'); config_mark($cfg['code'], ['kind' => 'user', 'user' => $admin], ['work_status' => $work[0], 'work_note' => $work[1]]); Actor::set('cli'); }
         if ($status === 'cancelled') config_cancel($cfg['code'], ['kind' => 'user', 'user' => $admin]);
         $at = date('Y-m-d H:i:s', time() - $daysAgo * 86400 - random_int(0, 36000));
-        q('UPDATE configurations SET created_at = ?, updated_at = ?, accepted_at = CASE WHEN accepted_at IS NULL THEN NULL ELSE ? END WHERE code = ?', [$at, $at, $at, $cfg['code']]);
+        q('UPDATE configurations SET created_at = ?, updated_at = ?, accepted_at = CASE WHEN accepted_at IS NULL THEN NULL ELSE ? END,
+            requested_at = CASE WHEN requested_at IS NULL THEN NULL ELSE ? END WHERE code = ?', [$at, $at, $at, $at, $cfg['code']]);
+        q('UPDATE leads SET created_at = ?, updated_at = ? WHERE configuration_id = (SELECT id FROM configurations WHERE code = ?)', [$at, $at, $cfg['code']]);
         $n++;
     }
+    // Dos clientes finales sin cuenta (invitados) que piden el presupuesto desde el móvil.
+    foreach ([['Dúo', 'Antracita', 'Raúl Ortiz', 'raul.ortiz@' . DEMO_DOMAIN, '699 230 114', 'Llamadme por la tarde, por favor.', 1],
+              ['Suspendido', 'Roble claro', 'Carmen Soto', '', '611 870 552', '', 0]] as [$model, $finish, $name, $email, $phone, $msg, $daysAgo]) {
+        $g = ['kind' => 'guest', 'codes' => []];
+        $cfg = config_create($leaf($model, $finish), $g);
+        $g['codes'][] = $cfg['code'];
+        config_request($cfg['code'], $g, ['name' => $name, 'email' => $email, 'phone' => $phone, 'message' => $msg, 'consent' => 1], false);
+        $at = date('Y-m-d H:i:s', time() - $daysAgo * 86400 - random_int(3600, 20000));
+        q('UPDATE configurations SET created_at = ?, updated_at = ?, requested_at = ? WHERE code = ?', [$at, $at, $at, $cfg['code']]);
+        q('UPDATE leads SET created_at = ?, updated_at = ? WHERE configuration_id = (SELECT id FROM configurations WHERE code = ?)', [$at, $at, $cfg['code']]);
+        $n++;
+    }
+    q("UPDATE leads SET status = 'contactado', work_status = 'en_curso', work_note = 'Llamada hecha; visita el jueves', work_by = 'laura.martin@example.com', work_at = ?
+        WHERE name = 'Elena Ruiz'", [now()]);
+    throttle_clear('lead:' . client_ip_key());
     // Un token de demostración ya revocado (para enseñar la pantalla de tokens sin descubrir ninguno vivo).
     $raw = token_create('ADRI (demo, revocado)', ['read', 'write'], (int) $ids['Laura Martín']);
     token_revoke((int) val('SELECT id FROM mcp_tokens WHERE token_hash = ?', [hash('sha256', $raw)]));

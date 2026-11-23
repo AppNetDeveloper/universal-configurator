@@ -74,17 +74,19 @@ check('el admin ve la de Ana', function () use ($as, $api, $code) { $as($GLOBALS
 
 // --- invitado
 check('invitado no permitido: 401', function () use ($as, $api, $c) { $t = $as(null); $_SESSION['guest'] = 1; return eq(401, $api('POST', '/api/configurations', ['node_id' => $c['blanco']], $t)[0]); });
-check('invitado permitido: crea, ve la suya y acepta con datos y consentimiento', function () use ($as, $api, $c, $code) {
+check('invitado permitido: crea, ve la suya; no acepta; pide el presupuesto con datos y consentimiento', function () use ($as, $api, $c, $code) {
     settings_save(['permitir_invitado' => '1']);
     $t = $as(null);
     $_SESSION['guest'] = 1;
     [$s, $b] = $api('POST', '/api/configurations', ['node_id' => $c['blanco']], $t);
     $gcode = $b['config']['code'];
     $other = $api('GET', "/api/configurations/$code")[0];
-    [$s2] = $api('POST', "/api/configurations/$gcode/accept", ['name' => 'Eva', 'email' => 'eva@x.test', 'phone' => '600'], $t);
-    [$s3, $b3] = $api('POST', "/api/configurations/$gcode/accept", ['name' => 'Eva', 'email' => 'eva@x.test', 'phone' => '600', 'consent' => true], $t);
+    [$s1] = $api('POST', "/api/configurations/$gcode/accept", ['name' => 'Eva', 'email' => 'eva@x.test', 'phone' => '600 111 222', 'consent' => true], $t);
+    [$s2] = $api('POST', "/api/configurations/$gcode/request", ['name' => 'Eva', 'phone' => '600 111 222'], $t);
+    [$s3, $b3] = $api('POST', "/api/configurations/$gcode/request", ['name' => 'Eva', 'phone' => '600 111 222', 'consent' => true], $t);
     settings_save(['permitir_invitado' => '0']);
-    return eq(201, $s) && eq(404, $other) && eq(422, $s2) && eq(200, $s3) && eq('accepted', $b3['config']['status']);
+    throttle_clear('lead:' . client_ip_key());
+    return eq(201, $s) && eq(404, $other) && eq(403, $s1) && eq(422, $s2) && eq(200, $s3) && eq('requested', $b3['config']['status']) && eq(true, $b3['lead_id'] > 0);
 });
 
 done();
