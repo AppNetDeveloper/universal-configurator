@@ -1,0 +1,7 @@
+# Datos e instalación (base de datos, config.php, correo de pruebas)
+/data/*
+!/data/.htaccess
+!/data/index.html
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
