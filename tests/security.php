@@ -87,6 +87,46 @@ check('…pero desde su dispositivo de confianza la dueña entra (solo cuenta el
     unset($_COOKIE['uc_trust']);
     return eq('ok', $r);
 });
+check('la cookie de confianza deja de valer al restablecer o cambiar la contraseña (va firmada con session_version)', function () use (&$trusted, $ana) {
+    $before = trusted_device_user($trusted);
+    user_set_password((int) $ana['id'], 'clave-de-ana'); // misma clave, pero cambia session_version
+    $after = trusted_device_user($trusted);
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    login_attempt('ana@x.test', 'clave-de-ana'); session_logout();
+    $trusted = (string) $GLOBALS['uc_trust_cookie']; // la nueva, tras entrar otra vez
+    return eq((int) $ana['id'], $before) && eq(null, $after) && eq((int) $ana['id'], trusted_device_user($trusted));
+});
+check('con la cookie, 3 fallos seguidos no la revocan; el 4.º sí, y ese dispositivo vuelve a las reglas normales', function () use ($as, $tryLogin, &$trusted) {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    $_COOKIE['uc_trust'] = $trusted;
+    $as('10.8.0.1');
+    for ($i = 0; $i < 3; $i++) $tryLogin('ana@x.test', 'mala');
+    $still = trusted_device_ok($trusted, 'ana@x.test');
+    $ok = $tryLogin('ana@x.test', 'clave-de-ana'); // sin espera: sigue siendo de confianza
+    $_COOKIE['uc_trust'] = $trusted = (string) $GLOBALS['uc_trust_cookie'];
+    for ($i = 0; $i < 4; $i++) $tryLogin('ana@x.test', 'mala');
+    $revoked = !trusted_device_ok($trusted, 'ana@x.test');
+    $tryLogin('ana@x.test', 'mala'); // ya sin confianza: este fallo deja espera para esta IP
+    $now = $tryLogin('ana@x.test', 'clave-de-ana');
+    unset($_COOKIE['uc_trust']);
+    return eq(true, $still) && eq('ok', $ok) && eq(true, $revoked) && eq(429, $now);
+});
+check('la cookie tiene su propio presupuesto: más de 10 fallos en una hora y deja de eximir', function () use ($as, $tryLogin, $advance) {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    $as('10.8.1.1');
+    login_attempt('ana@x.test', 'clave-de-ana'); session_logout();
+    $cookie = (string) $GLOBALS['uc_trust_cookie'];
+    for ($i = 0; $i < 4; $i++) { // 3 fallos y un acierto, cuatro veces: nunca 4 seguidos, pero 12 fallos en la hora
+        $_COOKIE['uc_trust'] = $cookie;
+        for ($j = 0; $j < 3; $j++) { $as('10.8.2.' . ($i * 3 + $j + 1)); $tryLogin('ana@x.test', 'mala'); }
+        $as('10.8.3.' . ($i + 1));
+        $tryLogin('ana@x.test', 'clave-de-ana');
+        if (isset($GLOBALS['uc_trust_cookie'])) $cookie = (string) $GLOBALS['uc_trust_cookie'];
+    }
+    $r = trusted_device_ok($cookie, 'ana@x.test');
+    unset($_COOKIE['uc_trust']);
+    return eq(false, $r);
+});
 check('la cookie de confianza de OTRA cuenta no salta el tope', function () use ($as, $tryLogin, &$trusted, $admin) {
     $_COOKIE['uc_trust'] = $trusted; // es de Ana
     q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
