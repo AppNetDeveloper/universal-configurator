@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/_helper.php';
 
-settings_save(['mail_transport' => 'log', 'empresa' => 'Cocinas Prueba']);
+settings_save(['mail_transport' => 'log', 'empresa' => 'Cocinas Prueba', 'url_publica' => 'https://conf.test']);
 $admin = fx_user('admin', 'admin@x.test');
 $ana = fx_user('comercial', 'ana@x.test', 'clave-de-ana');
 $mailLog = fn() => (string) @file_get_contents(UC_DATA . '/mail.log');
@@ -107,6 +107,25 @@ check_error('enlace caducado (más de 1 hora) no vale', function () use ($lastLi
     q('UPDATE password_resets SET expires_at = ?', [time() - 1]);
     password_reset_consume($tok, 'clave-nueva-99');
 }, 'caducado');
+check('sin url_publica y con Host: evil.example no sale ningún enlace (ni correo) y queda aviso', function () use ($mailLog) {
+    q('DELETE FROM throttle');
+    settings_save(['url_publica' => '']);
+    $_SERVER['HTTP_HOST'] = 'evil.example';
+    $before = $mailLog();
+    password_reset_request('ana@x.test');
+    $after = $mailLog();
+    $warn = (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'mail.no_public_url'");
+    $inviteErr = '';
+    try { user_invite('nueva@x.test', 'Nueva', 'comercial'); } catch (UcError $e) { $inviteErr = $e->getMessage(); }
+    unset($_SERVER['HTTP_HOST']);
+    return eq($before, $after, 'no se envía nada') && eq(false, str_contains($after, 'evil.example')) && eq(true, $warn > 0)
+        && eq(true, str_contains($inviteErr, 'URL pública')) && eq(null, user_by_email('nueva@x.test'), 'el alta no se hace a medias');
+});
+check_error('reset_link sin url_publica no cae a la cabecera Host', function () {
+    $_SERVER['HTTP_HOST'] = 'evil.example';
+    try { reset_link('abc'); } finally { unset($_SERVER['HTTP_HOST']); }
+}, 'URL pública');
+check_error('instalar sin dirección pública no instala', fn() => uc_install(['empresa' => 'X', 'admin_email' => 'z@x.test', 'admin_password' => 'secreta123', 'url' => '']), 'URL pública');
 check('el enlace del correo usa la dirección pública de Ajustes, no la cabecera Host', function () use ($lastLink, $mailLog) {
     q('DELETE FROM throttle');
     settings_save(['url_publica' => 'https://configurador.empresa.test']);

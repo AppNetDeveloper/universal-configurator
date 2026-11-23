@@ -218,6 +218,7 @@ function admin_handle(string $path, string $method): void
             try {
                 if (!empty($m[2])) {
                     if ($target['auth_source'] !== 'local') throw new UcError(t('Esta persona entra con BionicEye: no tiene contraseña local.'));
+                    require_public_url();
                     $_SESSION['invite_link'] = ['email' => $target['email'], 'link' => reset_link(password_reset_create($uid, INVITE_TTL)), 'sent' => false];
                     audit('user.reset_link', $target['email']);
                     flash(t('Enlace nuevo creado (72 horas). Pásaselo a la persona.'));
@@ -253,7 +254,7 @@ function admin_handle(string $path, string $method): void
         // ---- tokens MCP
         if ($path === '/tokens' && !$post) {
             admin_render('tokens', '/tokens', ['title' => t('Tokens MCP'), 'tokens' => tokens_all(), 'newToken' => $_SESSION['new_token'] ?? null,
-                'owners' => rows("SELECT id, name, email, role FROM users WHERE active = 1 AND role IN ('admin','comercial') ORDER BY role, name"), 'mcpUrl' => public_url() . '/mcp']);
+                'owners' => rows("SELECT id, name, email, role FROM users WHERE active = 1 AND role IN ('admin','comercial') ORDER BY role, name"), 'mcpUrl' => (public_url() ?? '') . '/mcp']);
             unset($_SESSION['new_token']);
             return;
         }
@@ -321,7 +322,8 @@ function admin_settings_save(array $in): void
     $be = rtrim(trim((string) ($in['bionicadri_url'] ?? '')), '/');
     if ($be !== '' && !preg_match('#^https://[^\s/]+#', $be)) throw new UcError(t('BionicEye: la dirección tiene que empezar por https://; recibido «{v}».', ['v' => mb_substr($be, 0, 60)]));
     $url = rtrim(trim((string) ($in['url_publica'] ?? '')), '/');
-    if ($url !== '' && !preg_match('#^https?://[^\s/]+$#', $url)) throw new UcError(t('Dirección pública: pon solo el origen, p. ej. https://configurador.miempresa.com; recibido «{v}».', ['v' => mb_substr($url, 0, 80)]));
+    if ($url === '') throw new UcError(t('La URL pública es obligatoria: es la base de los enlaces que se envían por correo.'));
+    if (!valid_public_url($url)) throw new UcError(t('Dirección pública: pon solo el origen, p. ej. https://configurador.miempresa.com; recibido «{v}».', ['v' => mb_substr($url, 0, 80)]));
     $values = [
         'url_publica' => $url, 'empresa' => mb_substr($empresa, 0, 120), 'logo' => $logo, 'iva' => (string) (float) $iva,
         'permitir_registro' => !empty($in['permitir_registro']) ? '1' : '0', 'permitir_invitado' => !empty($in['permitir_invitado']) ? '1' : '0',

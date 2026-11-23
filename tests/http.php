@@ -81,6 +81,15 @@ check('el instalador comprueba requisitos y lleva el crédito', function () use 
     $r = $adm->get('/install');
     return eq(200, $r['status']) && eq(true, str_contains($r['body'], 'pdo_sqlite') && str_contains($r['body'], 'Hecho con Universal Configurator'));
 });
+check('el instalador propone la URL actual como dirección pública (obligatoria)', function () use ($adm, $BASE) {
+    $b = $adm->get('/install')['body'];
+    return eq(1, preg_match('#name="url" required[^>]*value="' . preg_quote($BASE, '#') . '"#', $b));
+});
+check('instalar con la dirección pública vacía no instala', function () use ($adm, $data) {
+    $csrf = Browser::csrf($adm->get('/install')['body']);
+    $r = $adm->post('/install', ['_csrf' => $csrf, 'empresa' => 'X', 'admin_name' => 'A', 'admin_email' => 'a@x.test', 'admin_password' => 'secreta123', 'url' => '']);
+    return eq(200, $r['status']) && eq(true, str_contains($r['body'], 'URL pública')) && eq(false, is_file("$data/config.php"));
+});
 check('instalar sin CSRF no instala', function () use ($adm, $data) {
     $adm->post('/install', ['empresa' => 'X', 'admin_name' => 'A', 'admin_email' => 'a@x.test', 'admin_password' => 'secreta123']);
     return eq(false, is_file("$data/config.php"));
@@ -88,7 +97,7 @@ check('instalar sin CSRF no instala', function () use ($adm, $data) {
 check('instalar crea config.php, la base, el admin y los datos de ejemplo', function () use ($adm, $data) {
     $csrf = Browser::csrf($adm->get('/install')['body']);
     $r = $adm->post('/install', ['_csrf' => $csrf, 'empresa' => 'Cocinas Demo', 'timezone' => 'Europe/Madrid', 'admin_name' => 'Admin',
-        'admin_email' => 'admin@demo.test', 'admin_password' => 'admin-12345', 'sample' => '1']);
+        'admin_email' => 'admin@demo.test', 'admin_password' => 'admin-12345', 'sample' => '1', 'url' => $GLOBALS['BASE']]);
     return eq(303, $r['status']) && eq('/admin', loc($r)) && eq(true, is_file("$data/config.php")) && eq(true, is_file("$data/configurator.sqlite"));
 });
 check('tras instalar, /install ya no instala', fn() => eq(true, $adm->get('/install')['status'] !== 200 || !str_contains($adm->get('/install')['body'], 'admin_password')));
@@ -327,6 +336,14 @@ check('panel: ajuste no válido avisa y no se guarda', function () use ($adm, $a
     $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '150', 'mail_transport' => 'log']);
     $p = $adm->get('/admin/ajustes')['body'];
     return eq(true, str_contains($p, 'porcentaje entre 0 y 100') && str_contains($p, 'value="21"'));
+});
+check('«olvidé» con Host: evil.example: el enlace del correo lleva la URL pública', function () use ($BASE, $data) {
+    $b = new Browser($BASE);
+    $g = $b->get('/olvide');
+    preg_match('/Set-Cookie: (uc_session=[^;]+)/i', $g['headers'], $ck); // con otro Host, curl no manda sola la cookie
+    $r = $b->req('POST', '/olvide', http_build_query(['_csrf' => Browser::csrf($g['body']), 'email' => 'ana@demo.test']), ['Host: evil.example', "Cookie: {$ck[1]}", 'Content-Type: application/x-www-form-urlencoded']);
+    $log = (string) @file_get_contents("$data/mail.log");
+    return eq(303, $r['status'], 'POST /olvide') && eq(true, str_contains($log, $BASE . '/restablecer?token=')) && eq(false, str_contains($log, 'evil.example'));
 });
 check('panel: cambiar el rol de una persona', function () use ($adm, $adminCsrf, $idFrom) {
     $p = $adm->get('/admin/usuarios')['body'];

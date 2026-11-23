@@ -178,7 +178,7 @@ function password_reset_create(int $userId, int $ttl = RESET_TTL): string
 
 function reset_link(string $raw): string
 {
-    return public_url() . '/restablecer?token=' . rawurlencode($raw);
+    return require_public_url() . '/restablecer?token=' . rawurlencode($raw);
 }
 
 /** «Olvidé mi contraseña»: siempre la misma respuesta, exista o no la cuenta. */
@@ -188,6 +188,12 @@ function password_reset_request(string $email): void
     if (!throttle('reset-ip:' . client_ip(), 10, 3600) || !throttle('reset-mail:' . hash('sha256', $email), 3, 3600)) return;
     $u = user_by_email($email);
     if (!$u || !$u['active'] || $u['auth_source'] !== 'local') return;
+    if (public_url() === null) {
+        // Nunca se cae a la cabecera Host: sin URL pública no sale el correo y queda el aviso.
+        audit('mail.no_public_url', "restablecer para $email: no enviado (falta la URL pública en Ajustes)");
+        error_log('[universal-configurator] restablecer no enviado: falta url_publica en Ajustes');
+        return;
+    }
     $link = reset_link(password_reset_create((int) $u['id']));
     try {
         mail_send([$u['email']], t('Restablecer tu contraseña'), t("Hola {nombre}:\n\nPara poner una contraseña nueva abre este enlace (vale 1 hora):\n{enlace}\n\nSi no lo has pedido tú, ignora este correo.\n\n{empresa}", [
@@ -226,8 +232,14 @@ function password_reset_consume(string $raw, string $password): array
 /** El admin da de alta a una persona sin contraseña: le llega el enlace para ponerla. Devuelve [id, enlace, correo_enviado]. */
 function user_invite(string $email, string $name, string $role): array
 {
-    $id = user_create($email, $name, $role, null);
-    $link = reset_link(password_reset_create($id, INVITE_TTL));
+    if (public_url() === null) {
+        audit('mail.no_public_url', 'alta de ' . strtolower(trim($email)) . ': no hecha (falta la URL pública en Ajustes)');
+        require_public_url();
+    }
+    [$id, $link] = tx(function () use ($email, $name, $role) {
+        $id = user_create($email, $name, $role, null);
+        return [$id, reset_link(password_reset_create($id, INVITE_TTL))];
+    });
     $sent = true;
     try {
         mail_send([strtolower(trim($email))], t('Tu cuenta en {empresa}', ['empresa' => setting('empresa')]), t("Hola {nombre}:\n\nTe hemos creado una cuenta en el configurador de {empresa}. Para poner tu contraseña abre este enlace (vale 72 horas):\n{enlace}\n", [

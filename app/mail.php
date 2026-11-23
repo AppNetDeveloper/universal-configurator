@@ -44,7 +44,8 @@ function mail_send(array $to, string $subject, string $body): void
         @chmod(UC_DATA . '/mail.log', 0600);
         return;
     }
-    $from = $clean(setting('mail_from')) ?: 'no-reply@' . preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    // Remitente por defecto: el dominio de la URL pública (nunca la cabecera Host de la petición).
+    $from = $clean(setting('mail_from')) ?: 'no-reply@' . (parse_url((string) public_url(), PHP_URL_HOST) ?: 'localhost');
     if (!filter_var($from, FILTER_VALIDATE_EMAIL)) throw new UcError(t('El remitente de los correos no es válido: revísalo en Ajustes.'));
     $encode = fn(string $s) => preg_match('/[^\x20-\x7e]/', $s) ? '=?UTF-8?B?' . base64_encode($s) . '?=' : $s;
     $domain = substr(strrchr($from, '@') ?: '@localhost', 1);

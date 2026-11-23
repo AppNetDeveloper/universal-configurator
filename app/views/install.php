@@ -1,4 +1,4 @@
-<?php /** @var array $checks @var bool $ok @var array $errors @var array $values @var array $timezones */
+<?php /** @var array $checks @var bool $ok @var array $errors @var array $values @var array $timezones @var string $proposedUrl */
 $v = fn(string $k, string $d = '') => e((string) ($values[$k] ?? $d));
 ?><!doctype html>
 <html lang="es">
@@ -29,6 +29,8 @@ $v = fn(string $k, string $d = '') => e((string) ($values[$k] ?? $d));
     <?= csrf_field() ?>
     <h2><?= te('Tu empresa') ?></h2>
     <label><?= te('Nombre de la empresa') ?><input name="empresa" required maxlength="120" value="<?= $v('empresa') ?>"></label>
+    <label><?= te('URL pública de la aplicación') ?><input name="url" required type="url" value="<?= e((string) ($values['url'] ?? $proposedUrl)) ?>">
+      <span class="small muted block"><?= te('Confírmala: es la dirección de los enlaces que se envían por correo. Hemos puesto la que usas ahora.') ?></span></label>
     <label><?= te('Zona horaria') ?>
       <select name="timezone"><?php foreach ($timezones as $tz): ?><option<?= $tz === ($values['timezone'] ?? 'Europe/Madrid') ? ' selected' : '' ?>><?= e($tz) ?></option><?php endforeach; ?></select>
     </label>

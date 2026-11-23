@@ -38,6 +38,9 @@ $logo = setting('logo');
   <?php endif; ?>
 </header>
 <main class="wrap<?= $wide ? ' wide' : '' ?>" id="main">
+  <?php if (is_admin($user) && public_url() === null): ?>
+    <div class="flash flash-error" role="alert"><?= te('Falta la URL pública de la aplicación: no se envían enlaces por correo (restablecer contraseña, altas) hasta que la pongas.') ?> <a href="/admin/ajustes"><?= te('Configúrala en Ajustes') ?></a></div>
+  <?php endif; ?>
   <?php foreach ($flashes as $f): ?>
     <div class="flash flash-<?= e($f['type']) ?>" role="<?= $f['type'] === 'error' ? 'alert' : 'status' ?>"><?= e($f['msg']) ?></div>
   <?php endforeach; ?>

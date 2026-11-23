@@ -47,6 +47,9 @@ function uc_install(array $in): int
     if ($empresa === '') throw new UcError(t('Escribe el nombre de la empresa.'));
     if (!in_array($tz, timezone_identifiers_list(), true)) throw new UcError(t('Zona horaria no válida.'));
     if (!filter_var(trim((string) ($in['admin_email'] ?? '')), FILTER_VALIDATE_EMAIL)) throw new UcError(t('El correo del administrador no es válido.'));
+    $url = rtrim(trim((string) ($in['url'] ?? '')), '/');
+    if ($url === '') throw new UcError(t('Escribe la URL pública de la aplicación (la de los enlaces de los correos), p. ej. https://configurador.miempresa.com.'));
+    if (!valid_public_url($url)) throw new UcError(t('URL pública no válida: «{v}». Pon solo el origen, p. ej. https://configurador.miempresa.com.', ['v' => mb_substr($url, 0, 80)]));
     validate_password((string) ($in['admin_password'] ?? ''));
 
     $lock = fopen(UC_DATA . '/.install.lock', 'c');
@@ -59,8 +62,6 @@ function uc_install(array $in): int
     try {
         migrate();
         Actor::set('instalador');
-        $url = rtrim(trim((string) ($in['url'] ?? '')), '/') ?: (PHP_SAPI === 'cli' ? '' : base_url());
-        if ($url !== '' && !preg_match('#^https?://[^\s/]+$#', $url)) throw new UcError(t('Dirección pública no válida: «{v}» (ej. https://configurador.miempresa.com).', ['v' => $url]));
         settings_save(['empresa' => mb_substr($empresa, 0, 120), 'url_publica' => $url]);
         $id = user_create((string) $in['admin_email'], trim((string) ($in['admin_name'] ?? '')) ?: 'Administrador', 'admin', (string) $in['admin_password']);
         if (!empty($in['sample'])) seed_sample();
@@ -101,7 +102,8 @@ function install_handle(string $path, string $method): void
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: no-store');
     echo render_template(UC_ROOT . '/app/views/install.php', ['checks' => install_requirements(), 'ok' => install_requirements_ok(), 'errors' => $errors,
-        'values' => array_diff_key($_POST, ['admin_password' => 1, '_csrf' => 1]), 'timezones' => timezone_identifiers_list()]);
+        'values' => array_diff_key($_POST, ['admin_password' => 1, '_csrf' => 1]), 'timezones' => timezone_identifiers_list(),
+        'proposedUrl' => base_url()]); // solo se PROPONE (la persona la confirma); lo que se guarda es lo que envía el formulario
 }
 
 // ---------------------------------------------------------------- datos de ejemplo

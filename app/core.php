@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 
 const UC_VERSION = '0.1.0';
-const UC_SCHEMA = 1;
+const UC_SCHEMA = 2;
 const UC_AUTHOR_URL = 'https://www.bionicadri.com';
 
 /** Crédito de autoría (lo exige la Licencia BionicAdri: no se debe eliminar). */
@@ -183,6 +183,12 @@ function migrate(): void
         id INTEGER PRIMARY KEY, at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS throttle (key TEXT PRIMARY KEY, hits INTEGER NOT NULL, reset_at INTEGER NOT NULL);
     SQL);
+    // v2: url_publica obligatoria. Una instalación anterior sin ella no puede deducirla con seguridad (la cabecera Host
+    // no es de fiar): queda el aviso en el registro y en el panel, y no se envían enlaces hasta que el admin la ponga.
+    if ((int) val("SELECT value FROM meta WHERE key = 'schema_version'") < 2 && trim((string) val("SELECT value FROM settings WHERE key = 'url_publica'")) === ''
+        && val('SELECT 1 FROM users LIMIT 1')) {
+        insert('audit_log', ['at' => now(), 'actor' => 'sistema', 'action' => 'settings.no_public_url', 'detail' => 'Falta la URL pública: configúrala en Ajustes; mientras, no se envían enlaces por correo.']);
+    }
     q("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", [(string) UC_SCHEMA]);
 }
 
@@ -331,13 +337,25 @@ function base_url(): string
 }
 
 /**
- * Dirección pública de la aplicación para enlaces que salen fuera (correos, vuelta de OAuth, MCP). Se guarda al
- * instalar y se cambia en Ajustes; nunca se toma de la cabecera Host si está guardada (un Host falso no cuela un enlace).
+ * Dirección pública de la aplicación: la ÚNICA base de los enlaces que salen fuera (correos de restablecer y de alta,
+ * vuelta de OAuth, dirección del MCP). Se guarda al instalar (obligatoria) y se cambia en Ajustes. Nunca se toma de la
+ * cabecera Host, que la controla quien hace la petición (envenenamiento del enlace de restablecer). Vacía = null.
  */
-function public_url(): string
+function public_url(): ?string
 {
     $u = rtrim(setting('url_publica'), '/');
-    return $u !== '' ? $u : base_url();
+    return $u !== '' ? $u : null;
+}
+
+/** public_url() o error claro: sin ella no se construye ningún enlace externo. */
+function require_public_url(): string
+{
+    return public_url() ?? throw new UcError(t('Falta la URL pública de la aplicación: configúrala en Panel → Ajustes. Sin ella no se envían enlaces por correo.'), [], 409);
+}
+
+function valid_public_url(string $u): bool
+{
+    return (bool) preg_match('#^https?://[A-Za-z0-9.-]+(:\d{1,5})?$#', $u);
 }
 
 function request_header(string $name): ?string
