@@ -18,9 +18,7 @@ const IMAGE_TYPES = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/webp' =
 
 function uploads_dir(): string
 {
-    $d = UC_DATA . '/uploads';
-    if (!is_dir($d)) @mkdir($d, 0750, true);
-    return $d;
+    return bk_private_dir(UC_DATA . '/uploads');
 }
 
 /**

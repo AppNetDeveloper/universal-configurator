@@ -111,7 +111,7 @@ check('buscar: ofrece la versión más nueva', fn() => eq(true, str_contains($ou
 check('actualizar: código nuevo, datos intactos, sin mantenimiento y con copia previa', fn() => eq(0, $rc) && eq('9.9.0', $version())
     && eq(true, is_file("$root/public/assets/version-9.9.0.txt")) && eq($nodes, $sql('SELECT id, name FROM nodes ORDER BY id'))
     && eq(false, is_file("$data/maintenance.json")) && eq(false, is_file("$data/updates/pending.json"))
-    && eq(true, (bool) glob("$data/backups/uc-copia-*-antes.zip")) && eq(true, json_decode((string) file_get_contents("$data/updates/last-result.json"), true)['ok']));
+    && eq(true, (bool) glob("$data/backups/uc-copia-*-antes*.zip")) && eq(true, json_decode((string) file_get_contents("$data/updates/last-result.json"), true)['ok']));
 
 // --- 4. la migración de la versión nueva falla: vuelve sola a la anterior, también la base
 $release('9.9.1', function (string $src) {

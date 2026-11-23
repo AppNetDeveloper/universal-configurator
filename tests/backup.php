@@ -62,7 +62,7 @@ check_error('sin escribir RESTAURAR no se hace nada', fn() => backup_restore($b[
 check('…y de verdad no cambió nada', fn() => eq('Cambiado', val('SELECT name FROM nodes WHERE id = ?', [$c['linea']])));
 $r = backup_restore($b['name'], 'RESTAURAR');
 check('ida y vuelta: los datos y las imágenes vuelven idénticos', fn() => eq($before, $snapshot()));
-check('antes de restaurar se hizo una copia del estado de entonces, y queda en Actividad', fn() => eq(true, (bool) preg_match('/-antes\.zip$/', $r['safety']))
+check('antes de restaurar se hizo una copia del estado de entonces, y queda en Actividad', fn() => eq(true, (bool) preg_match('/-antes-[a-f0-9]{16}\.zip$/', $r['safety']))
     && eq(true, is_file(bk_dir() . '/' . $r['safety'])) && eq(true, (bool) val("SELECT 1 FROM audit_log WHERE action = 'backup.restore'")));
 check('la conexión vuelve a funcionar tras sustituir la base (y sin mantenimiento)', fn() => eq(true, (int) val('SELECT COUNT(*) FROM nodes') > 0) && eq(null, uc_maintenance_state()));
 
@@ -193,6 +193,21 @@ check('zip bomb: el tope cuenta lo que de verdad se descomprime, sumando todos l
     try { backup_restore($mkzip(['configurator.sqlite' => $db0, $n => $big], $m), 'RESTAURAR'); } catch (UcError $e) { return eq(true, str_contains($e->getMessage(), 'demasiado grande'), $e->getMessage()); }
     finally { unset($GLOBALS['uc_bk_max_unpacked']); }
     return false;
+});
+
+check('las copias nuevas llevan un trozo aleatorio en el nombre (no se adivina la URL si el servidor sirviera data/)', function () {
+    $a = backup_create();
+    $b = backup_create(true);
+    return eq(1, preg_match('/^uc-copia-\d{8}-\d{6}-[a-f0-9]{16}\.zip$/', $a['name']), $a['name']) && eq(1, preg_match('/-auto-[a-f0-9]{16}\.zip$/', $b['name']), $b['name'])
+        && eq(true, backup_list()[0]['name'] !== '') && eq(true, (bool) array_filter(backup_list(), fn($x) => $x['name'] === $b['name'] && $x['auto']))
+        && eq(true, is_file(bk_dir() . '/index.html')) && eq(true, is_file(uploads_dir() . '/index.html'));
+});
+check('las copias con el nombre de antes (sin el trozo aleatorio) se siguen listando', function () use ($b) {
+    $old = BK_PREFIX . '20260101-120000-auto.zip';
+    copy(bk_dir() . '/' . $b['name'], bk_dir() . '/' . $old);
+    $ok = bk_valid_name($old) && (bool) array_filter(backup_list(), fn($x) => $x['name'] === $old && $x['auto']);
+    unlink(bk_dir() . '/' . $old);
+    return $ok;
 });
 
 // Cifrado al descargar y subida

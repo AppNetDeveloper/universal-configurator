@@ -31,9 +31,7 @@ const BK_CONFIG_KEYS = ['secret', 'timezone', 'debug', 'installed_at', 'version'
 
 function bk_dir(): string
 {
-    $d = UC_DATA . '/backups';
-    if (!is_dir($d)) { @mkdir($d, 0750, true); @file_put_contents("$d/.htaccess", "Require all denied\nDeny from all\n"); }
-    return $d;
+    return bk_private_dir(UC_DATA . '/backups');
 }
 
 function bk_work(string $prefix): string
@@ -62,7 +60,26 @@ function bk_human_size(int $b): string
 /** Nombre seguro de una copia de la lista (nada de rutas). */
 function bk_valid_name(string $name): bool
 {
-    return (bool) preg_match('/^' . preg_quote(BK_PREFIX, '/') . '\d{8}-\d{6}(-[a-z0-9]{1,12})?\.zip$/', $name);
+    return (bool) preg_match('/^' . preg_quote(BK_PREFIX, '/') . '\d{8}-\d{6}(-[a-z0-9]{1,12})?(-[a-f0-9]{16})?\.zip$/', $name);
+}
+
+/**
+ * Nombre de una copia nueva: fecha, etiqueta y 16 caracteres aleatorios. Si un servidor mal configurado llegara a servir
+ * data/ (Apache sin AllowOverride y con el dominio en la carpeta del proyecto), la dirección de una copia no se adivina.
+ */
+function bk_new_name(string $tag = ''): string
+{
+    $tag = substr((string) preg_replace('/[^a-z0-9]/', '', strtolower($tag)), 0, 12);
+    return BK_PREFIX . date('Ymd-His') . ($tag !== '' ? "-$tag" : '') . '-' . bin2hex(random_bytes(8)) . '.zip';
+}
+
+/** Carpeta de data/ que nunca se sirve: .htaccess para Apache y un index.html vacío (sin listado aunque falte lo demás). */
+function bk_private_dir(string $d): string
+{
+    if (!is_dir($d)) @mkdir($d, 0750, true);
+    if (!is_file("$d/.htaccess")) @file_put_contents("$d/.htaccess", "Require all denied\nDeny from all\n");
+    if (!is_file("$d/index.html")) @file_put_contents("$d/index.html", '');
+    return $d;
 }
 
 function backup_path(string $name): string
@@ -96,9 +113,7 @@ function backup_create(bool $auto = false, string $tag = ''): array
                 'users' => (int) val('SELECT COUNT(*) FROM users'), 'uploads' => count($files) - 1 - (int) isset($files['config.json'])],
             'note' => 'Incluye config.json con la clave secreta de la instalación: guarda esta copia como una contraseña.', 'files' => []];
         foreach ($files as $rel => $abs) $manifest['files'][$rel] = ['sha256' => hash_file('sha256', $abs), 'size' => (int) filesize($abs)];
-        $name = BK_PREFIX . date('Ymd-His') . ($auto ? '-auto' : ($tag !== '' ? '-' . preg_replace('/[^a-z0-9]/', '', strtolower($tag)) : '')) . '.zip';
-        $n = 1;
-        while (is_file(bk_dir() . "/$name")) $name = preg_replace('/(\.zip)$/', '', $name) . ($n++) . '.zip';
+        do { $name = bk_new_name($auto ? 'auto' : $tag); } while (is_file(bk_dir() . "/$name"));
         $tmp = "$work/out.zip";
         $z = new ZipArchive();
         if ($z->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) throw new UcError(t('No se pudo crear el archivo de la copia.'));
@@ -362,9 +377,7 @@ function backup_import(string $path, string $password = '', bool $fromHttp = fal
         elseif (strncmp($head, "PK\x03\x04", 4) !== 0) throw new UcError(t('El archivo no es una copia del configurador (.zip o cifrada).'));
         bk_validate_extract($zip, "$work/x");
         if (is_file("$work/x/config.json")) bk_config_from_json("$work/x/config.json");
-        $name = BK_PREFIX . date('Ymd-His') . '-subida.zip';
-        $n = 1;
-        while (is_file(bk_dir() . "/$name")) $name = BK_PREFIX . date('Ymd-His') . '-subida' . ($n++) . '.zip';
+        do { $name = bk_new_name('subida'); } while (is_file(bk_dir() . "/$name"));
         if (!@copy($zip, bk_dir() . "/$name")) throw new UcError(t('No se pudo guardar la copia subida.'));
         @chmod(bk_dir() . "/$name", 0640);
     } finally {

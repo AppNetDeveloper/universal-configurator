@@ -105,6 +105,10 @@ abre la dirección: el instalador web pide el código de instalación (está en 
 la empresa, tu correo, tu contraseña y la **dirección pública** (la de los enlaces de los correos). Con «datos de
 ejemplo» empiezas con cocinas, armarios y baños ya montados. Detalle en el [README](../README.md#instalación).
 
+Si el hosting no deja apuntar el dominio a `public/` y subes todo a la raíz, el `.htaccess` de la raíz protege `data/`,
+`app/` y el resto, **pero solo si Apache lee los `.htaccess`** (`AllowOverride All`). Con `AllowOverride None` no lee
+ninguno y `data/` (la base de datos y las copias) quedaría a la vista: en ese caso, apunta el dominio a `public/`.
+
 ### Catálogo en árbol
 
 **Panel → Catálogo.** El catálogo es un árbol sin límite de niveles: familia → modelo → acabado (o lo que necesites).

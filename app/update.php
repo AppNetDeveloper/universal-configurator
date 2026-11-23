@@ -30,9 +30,7 @@ const UPDATE_ROOT_DIRS = ['app', 'bin', 'deploy', 'docs', 'public'];
 
 function update_dir(): string
 {
-    $d = UC_DATA . '/updates';
-    if (!is_dir($d)) { @mkdir($d, 0750, true); @file_put_contents("$d/.htaccess", "Require all denied\nDeny from all\n"); }
-    return $d;
+    return bk_private_dir(UC_DATA . '/updates');
 }
 
 function update_state(): array
