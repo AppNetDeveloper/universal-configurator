@@ -113,11 +113,10 @@ function front_handle(string $path, string $method): void
         if (!setting_bool('permitir_registro')) { render('message', ['title' => t('Registro cerrado'), 'message' => t('El registro no está abierto. Pide una cuenta a la empresa.')], 404); return; }
         if ($post) {
             try {
-                if ((string) ($_POST['password'] ?? '') !== (string) ($_POST['password2'] ?? '')) throw new UcError(t('Las dos contraseñas no coinciden.'));
-                register_user((string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''), (string) ($_POST['password'] ?? ''));
+                $msg = register_user((string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''));
                 unset($_SESSION['old']);
-                flash(t('Cuenta creada. Ya puedes configurar.'));
-                redirect('/configurar');
+                flash($msg);
+                redirect('/');
             } catch (UcError $ex) { keep_old($_POST); flash($ex->getMessage(), 'error'); redirect('/registro'); }
         }
         render('register', ['title' => t('Crear cuenta')]);

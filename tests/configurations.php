@@ -169,6 +169,24 @@ check('el invitado tiene un límite de borradores por conexión', function () us
     throw new RuntimeException('no limitó');
 });
 
+// --- carrera «editar lo aceptado» (revisión de seguridad): con la fila leída ANTES de aceptar, una operación no pasa
+check('una operación con la configuración leída antes de aceptar no cambia lo aceptado (409)', function () use ($c, $va) {
+    $x = config_create($c['blanco'], $va);
+    $stale = row('SELECT * FROM configurations WHERE code = ?', [$x['code']]); // leída cuando aún era borrador
+    config_accept($x['code'], $va);
+    $item = $x['walls'][0]['items'][0]['id'];
+    try { config_apply_one($stale, ['op' => 'replace', 'item_id' => $item, 'module_type_id' => $c['alto']]); }
+    catch (UcError $e) { return eq(409, $e->status) && eq($c['bajo'], (int) val('SELECT module_type_id FROM config_items WHERE id = ?', [$item])); }
+    throw new RuntimeException('cambió una configuración aceptada');
+});
+check('lo mismo con customer', function () use ($c, $va) {
+    $x = config_create($c['blanco'], $va);
+    $stale = row('SELECT * FROM configurations WHERE code = ?', [$x['code']]);
+    config_accept($x['code'], $va);
+    try { config_apply_one($stale, ['op' => 'customer', 'name' => 'Otro']); } catch (UcError $e) { return eq(409, $e->status) && eq('', val('SELECT customer_name FROM configurations WHERE code = ?', [$x['code']])); }
+    throw new RuntimeException('cambió una configuración aceptada');
+});
+
 // --- exportación
 check('CSV: una fila por módulo, separador ; y fórmulas neutralizadas', function () use ($c, $va) {
     $x = config_create($c['blanco'], $va);

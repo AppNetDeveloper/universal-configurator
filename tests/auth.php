@@ -67,13 +67,13 @@ check_error('no se puede dejar sin admin activo', fn() => user_update((int) $adm
 check_error('contraseña corta se rechaza', fn() => user_create('corta@x.test', 'C', 'cliente', '1234567'), '8 caracteres');
 
 // --- registro e invitado
-check_error('registro cerrado por defecto', fn() => register_user('Eva', 'eva@x.test', 'secreta123'), 'registro');
-check('registro abierto crea un cliente con sesión', function () {
+check_error('registro cerrado por defecto', fn() => register_user('Eva', 'eva@x.test'), 'registro');
+check('registro abierto crea un cliente pendiente de verificar su correo (sin sesión)', function () {
     settings_save(['permitir_registro' => '1']);
-    $u = register_user('Eva', 'eva@x.test', 'secreta123');
+    register_user('Eva', 'eva@x.test');
     settings_save(['permitir_registro' => '0']);
-    session_logout();
-    return eq('cliente', $u['role']);
+    $u = user_by_email('eva@x.test');
+    return eq('cliente', $u['role']) && eq(1, (int) $u['pending_verification']) && eq(null, current_user());
 });
 check_error('invitado no permitido por defecto', fn() => guest_start(), 'cuenta');
 check('invitado permitido: sesión de invitado sin cuenta', function () {

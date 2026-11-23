@@ -12,7 +12,7 @@ $c = fx_catalog();
 $ana = fx_user('comercial', 'ana@x.test');
 $beto = fx_user('comercial', 'beto@x.test');
 $admin = fx_user('admin', 'admin@x.test');
-$as = function (?array $u) { $_SESSION = []; if ($u) $_SESSION['uid'] = (int) $u['id']; return csrf_token(); };
+$as = function (?array $u) { $_SESSION = []; if ($u) { $_SESSION['uid'] = (int) $u['id']; $_SESSION['sv'] = (int) user_by_id((int) $u['id'])['session_version']; } return csrf_token(); };
 $api = fn(string $m, string $path, array $body = [], ?string $csrf = null) => api_dispatch($m, $path, $body, $csrf);
 
 // --- sin sesión / sin CSRF

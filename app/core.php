@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 
 const UC_VERSION = '0.1.0';
-const UC_SCHEMA = 3;
+const UC_SCHEMA = 4;
 const UC_AUTHOR_URL = 'https://www.bionicadri.com';
 
 /** Crédito de autoría (lo exige la Licencia BionicAdri: no se debe eliminar). */
@@ -150,7 +150,8 @@ function migrate(): void
         password_hash TEXT NULL, role TEXT NOT NULL CHECK (role IN ('admin','comercial','cliente')),
         active INTEGER NOT NULL DEFAULT 1,
         auth_source TEXT NOT NULL DEFAULT 'local' CHECK (auth_source IN ('local','bionicadri')),
-        external_id TEXT NULL, created_at TEXT NOT NULL, last_login_at TEXT NULL);
+        external_id TEXT NULL, created_at TEXT NOT NULL, last_login_at TEXT NULL,
+        session_version INTEGER NOT NULL DEFAULT 0, pending_verification INTEGER NOT NULL DEFAULT 0);
     CREATE UNIQUE INDEX IF NOT EXISTS users_external ON users (auth_source, external_id) WHERE external_id IS NOT NULL;
     CREATE TABLE IF NOT EXISTS password_resets (
         token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -218,6 +219,10 @@ function migrate(): void
         grain TEXT NOT NULL DEFAULT '', edge_banding TEXT NOT NULL DEFAULT '', sort INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS config_item_parts_item ON config_item_parts (config_item_id, sort);
     SQL);
+    // v4: versión de sesión (cambiar la contraseña o desactivar cierra las demás sesiones) y registro pendiente de verificar.
+    $uc = array_column(rows('PRAGMA table_info(users)'), 'name');
+    if (!in_array('session_version', $uc, true)) db()->exec('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
+    if (!in_array('pending_verification', $uc, true)) db()->exec('ALTER TABLE users ADD COLUMN pending_verification INTEGER NOT NULL DEFAULT 0');
     // v2: url_publica obligatoria. Una instalación anterior sin ella no puede deducirla con seguridad (la cabecera Host
     // no es de fiar): queda el aviso en el registro y en el panel, y no se envían enlaces hasta que el admin la ponga.
     if ((int) val("SELECT value FROM meta WHERE key = 'schema_version'") < 2 && trim((string) val("SELECT value FROM settings WHERE key = 'url_publica'")) === ''
@@ -487,6 +492,7 @@ function request_header(string $name): ?string
 function throttle(string $key, int $max, int $window): bool
 {
     $t = time();
+    if (random_int(1, 100) === 1) throttle_purge(); // la tabla no crece sin límite
     $r = row('SELECT hits, reset_at FROM throttle WHERE key = ?', [$key]);
     if (!$r || $r['reset_at'] < $t) {
         q('INSERT OR REPLACE INTO throttle (key, hits, reset_at) VALUES (?, 1, ?)', [$key, $t + $window]);
@@ -495,6 +501,12 @@ function throttle(string $key, int $max, int $window): bool
     if ($r['hits'] >= $max) return false;
     q('UPDATE throttle SET hits = hits + 1 WHERE key = ?', [$key]);
     return true;
+}
+
+/** Borra los contadores caducados. */
+function throttle_purge(): void
+{
+    q('DELETE FROM throttle WHERE reset_at < ?', [time()]);
 }
 
 function throttle_clear(string $key): void

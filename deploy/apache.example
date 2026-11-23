@@ -5,7 +5,8 @@
     DocumentRoot /var/www/universal-configurator/public
 
     <Directory /var/www/universal-configurator/public>
-        AllowOverride All          # usa public/.htaccess (controlador frontal y cabecera Authorization para el MCP)
+        # Usa public/.htaccess (controlador frontal y cabecera Authorization para el MCP)
+        AllowOverride All
         Require all granted
         Options -Indexes
     </Directory>

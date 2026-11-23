@@ -409,6 +409,18 @@ function config_apply_ops(string $code, array $ops, ?array $viewer): array
 /** @return list<string> notas (p. ej. ancho ajustado) */
 function config_apply_one(array $cfg, array $op): array
 {
+    // Se vuelve a leer el estado AQUÍ (dentro de la transacción de quien llama): una fila leída antes de que otra
+    // petición aceptara la configuración no sirve para cambiarla.
+    return tx(function () use ($cfg, $op) {
+        $now = row('SELECT * FROM configurations WHERE id = ?', [$cfg['id']]) ?? throw new UcError(t('La configuración ya no existe.'), [], 404);
+        config_require_draft($now);
+        return config_apply_one_checked($now, $op);
+    });
+}
+
+/** @return list<string> */
+function config_apply_one_checked(array $cfg, array $op): array
+{
     $kind = (string) ($op['op'] ?? '');
     if (!isset(CONFIG_OP_FIELDS[$kind])) throw new UcError(t('Operación «{v}» desconocida. Valen: {ops}.', ['v' => $kind, 'ops' => implode(', ', CONFIG_OPS)]));
     reject_unknown_keys($op, CONFIG_OP_FIELDS[$kind], $kind);
