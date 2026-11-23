@@ -21,8 +21,11 @@ respuestas.
 - El token se crea en **Panel → Tokens MCP** y actúa como la persona elegida. Si esa persona es comercial, solo ve y
   toca **sus** configuraciones; si es administradora, todas.
 - **Ámbitos:**
-  - `read`: `catalog_tree`, `module_types`, `config_list`, `config_get`, `price_check` y `cut_list`;
-  - `write`: además `config_create`, `config_update` y `config_accept`.
+  - `read`: `catalog_tree`, `module_types`, `config_list`, `config_get`, `price_check`, `cut_list`, `lead_list` y
+    `lead_get`;
+  - `write`: además `config_create`, `config_update`, `config_accept`, `config_share`, `config_mark` y `lead_mark`.
+- **Aceptar es del equipo**: un token cuyo dueño es un cliente no acepta (403 con la salida buena). El cliente final
+  pide el presupuesto desde el configurador (estado `requested`) y eso crea un lead.
   - Con un token `read`, las herramientas que escriben ni aparecen en `tools/list`.
 
 
@@ -44,13 +47,31 @@ catalog_tree → module_types (node_id) → config_create → config_update → 
 7. **`config_accept`**: **solo cuando la persona lo haya confirmado expresamente tras ver el total.** Acepta y congela
    el precio y el despiece; después ya no se edita (para cambiarla, `config_create` con `copy_of`).
 
+## Trabajar lo nuevo (sin procesar)
+
+Cada configuración aceptada (o con el presupuesto pedido por el cliente) y cada lead llevan un **estado de trabajo**,
+aparte del estado de venta: `work_status` = `nuevo` → `en_curso` → `hecho`, con `work_note` (una línea, ≤ 200),
+`work_by` (quién lo marcó: la persona o el nombre del token) y `work_at`. Nace «nuevo» al aceptar y al entrar un lead.
+
+```
+config_list(pendientes=true) → por cada una: config_get → haz lo tuyo (planos, presupuesto, lista de corte)
+  → config_mark(code, work_status="hecho", work_note="Planos y presupuesto enviados")
+lead_list(work_status="nuevo") → lead_get → llama o escribe → lead_mark(lead_id, work_status="hecho", estado="contactado", work_note="…")
+```
+
+`config_list` pone las pendientes primero y dice cuántas hay (`pending`). Marcar **no** toca el precio, el despiece ni
+el estado de venta (y no cambia `updated_at`). Cada cambio queda en **Panel → Actividad**.
+
 ## Qué herramientas ESCRIBEN
 
 | Escribe | Cuándo |
 |---|---|
 | `config_create` | Empezar una configuración (o duplicar una con `copy_of`). |
 | `config_update` | Cambiar un borrador. |
-| `config_accept` | **Confirmado por la persona.** Nunca por iniciativa propia. |
+| `config_accept` | **Confirmado por la persona.** Nunca por iniciativa propia. Solo con un token del equipo. |
+| `config_share` | Mandar la configuración al cliente (enlace de solo lectura, 30 días). |
+| `config_mark` | Has procesado una configuración: estado de trabajo y nota. |
+| `lead_mark` | Has trabajado un lead: estado de trabajo, nota y estado comercial. |
 
 Todo lo demás solo lee. Cada llamada queda en **Panel → Actividad**.
 
@@ -119,12 +140,15 @@ Llamada real: `module_types {"node_id": 5}`. Respuesta (un tipo, recortado):
 **Cuándo:** para buscar configuraciones.
 
 **Filtros:**
-- `status`: `draft`, `accepted` o `cancelled`;
+- `status`: `draft`, `requested` (presupuesto pedido por el cliente), `accepted` o `cancelled`;
+- `work_status`: `nuevo`, `en_curso` o `hecho`;
+- `pendientes`: `true` = aceptadas o pedidas con el trabajo `nuevo` o `en_curso`;
 - `from` y `to`: fecha de creación, en formato `AAAA-MM-DD`;
 - `q`: código, nombre, correo o teléfono;
 - `page` y `per_page` (como mucho 100).
 
-**Devuelve:** `items` (código, estado en palabras, producto, cliente, total en número y céntimos), `total` y `pages`.
+**Devuelve:** `items` (código, estado en palabras, producto, cliente, total en número y céntimos, estado de trabajo con
+su nota y quién), `total`, `pages` y `pending` (cuántas quedan por trabajar). Las pendientes salen primero.
 
 ### `config_get` (read)
 
@@ -259,6 +283,35 @@ Respuesta real (`note`):
 
 > Aceptada y con el precio y el despiece congelados. Confirma a la persona el código y el total; para cambiarla habrá
 > que duplicarla.
+
+### `config_share` (write)
+
+**Cuándo:** para mandar una configuración al cliente. **Devuelve:** `url` (solo lectura, firmada, caduca en 30 días,
+sin datos personales ni en la URL ni en la página; se construye con la dirección pública de la instalación),
+`expires_at`, `days` y `whatsapp_url` (con el texto listo). Una anulada no se comparte y su enlace deja de abrir.
+
+### `config_mark` (write)
+
+**Cuándo:** al terminar (o empezar) lo tuyo con una configuración aceptada o pedida. **Parámetros:** `code`,
+`work_status` (`nuevo`, `en_curso`, `hecho`) y `work_note` (opcional, una línea, ≤ 200). Un comercial solo marca las
+suyas. **Devuelve:** la configuración con `work_status`, `work_note`, `work_by` y `work_at`.
+
+### `lead_list` (read)
+
+**Cuándo:** para ver quién ha pedido presupuesto desde el configurador. **Filtros:** `estado` (`nuevo`, `contactado`,
+`cerrado`), `work_status`, `q` (nombre, teléfono o correo), `page`, `per_page`. Un admin ve todos; un comercial, los de
+sus configuraciones. **Devuelve:** `items` (nombre, teléfono, correo, mensaje, código y total de su configuración,
+estados), `total`, `pages` y `pending`.
+
+### `lead_get` (read)
+
+**Cuándo:** antes de llamar o escribir. **Parámetro:** `lead_id`. **Devuelve:** el lead entero (con el consentimiento
+y su `configuration_code`; los módulos, con `config_get`).
+
+### `lead_mark` (write)
+
+**Cuándo:** al trabajar un lead. **Parámetros:** `lead_id`, `work_status`, `work_note` (opcional) y `estado`
+(opcional: `nuevo`, `contactado`, `cerrado`).
 
 ## Errores típicos y cómo leerlos
 

@@ -10,7 +10,7 @@ declare(strict_types=1);
  */
 
 const MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
-const TOKEN_SCOPES = ['read' => 'Leer catálogo y configuraciones', 'write' => 'Crear, cambiar y aceptar configuraciones'];
+const TOKEN_SCOPES = ['read' => 'Leer catálogo, configuraciones y leads', 'write' => 'Crear, cambiar, aceptar y compartir configuraciones; marcar el trabajo'];
 
 // ---------------------------------------------------------------- tokens
 
@@ -81,7 +81,15 @@ function mcp_instructions(): string
     todas o ninguna) → price_check (probar sin guardar) / config_get (precio, tramo y despiece) → cut_list (lista de
     corte) → config_accept SOLO si la persona lo ha confirmado expresamente tras ver el total.
 
-    ESCRIBEN: config_create, config_update y config_accept (permiso write). Las demás solo leen (read).
+    ESCRIBEN: config_create, config_update, config_accept, config_share, config_mark y lead_mark (permiso write). Las demás
+    solo leen (read). Aceptar es del equipo (token de un comercial o un admin).
+
+    LO NUEVO, SIN PROCESAR: config_list(pendientes=true) da las aceptadas o con presupuesto pedido cuyo trabajo está
+    «nuevo» o «en_curso», las nuevas primero, y cuántas hay (pending). Por cada una: haz lo tuyo (planos, presupuesto…)
+    → config_mark(code, work_status="hecho", work_note="Planos enviados"). Los LEADS (clientes que pidieron presupuesto
+    desde el configurador, con nombre y teléfono): lead_list(work_status="nuevo") → lead_get → lead_mark. Marcar no toca
+    el precio ni el despiece. ESTADOS de una configuración: draft (borrador), requested (presupuesto pedido por el cliente:
+    precio guardado, ya no se edita), accepted, cancelled.
     PRECIO: tramos [desde, hasta] cm, ambos incluidos, con un precio fijo por tramo; no se cobra por cm. Un ancho que cae
     en un hueco entre dos tramos se cobra como el tramo de ARRIBA (tier_rule "next_up" y tier_note lo dicen). Por debajo
     del primer tramo, por encima del último o fuera del mínimo/máximo del tipo no es válido: el error dice qué vale. Total en EUR SIN IVA; el IVA aparte.
@@ -102,7 +110,8 @@ function mcp_token_note(): string
     $o = $t['owner'];
     $note = "\n\nEste token actúa como {$o['name']} (" . (ROLES[$o['role']] ?? $o['role']) . '). Permisos: ' . implode(', ', $t['scopes']) . '.';
     $note .= $o['role'] === 'admin' ? ' Ve todas las configuraciones.' : ' Solo ve y toca las configuraciones de esa persona.';
-    if (!in_array('write', $t['scopes'], true)) $note .= " Sin el permiso «write» no puedes crear, cambiar ni aceptar (esas herramientas no aparecen).";
+    if (!in_array('write', $t['scopes'], true)) $note .= " Sin el permiso «write» no puedes crear, cambiar, aceptar, compartir ni marcar el trabajo (esas herramientas no aparecen).";
+    elseif (!in_array($o['role'], ACCEPT_ROLES, true)) $note .= ' Su dueño es un cliente: no acepta (eso es del equipo).';
     return $note;
 }
 
@@ -134,11 +143,16 @@ function mcp_tools(): array
             'handler' => fn(array $a) => ['types' => mcp_module_types(isset($a['node_id']) ? parse_int($a['node_id'], 'node_id') : null), 'currency' => 'EUR', 'prices_include_tax' => false],
         ],
         'config_list' => [
-            'description' => 'Úsala para buscar configuraciones (por cliente, código, estado o fechas). Las tuyas, o todas si el token es de un admin, de la más nueva a la más vieja, paginadas. Filtros: status (draft, accepted, cancelled), from y to (AAAA-MM-DD), q (código, nombre, correo o teléfono).',
-            'scope' => 'read', 'inputSchema' => $obj(['status' => ['type' => 'string', 'enum' => array_keys(CONFIG_STATUSES)], 'from' => $str('Desde AAAA-MM-DD'), 'to' => $str('Hasta AAAA-MM-DD'),
+            'description' => 'Úsala para buscar configuraciones y para saber qué hay NUEVO sin procesar (pendientes=true). Las tuyas, o todas si el token es de un admin; las pendientes de trabajar primero y luego de la más nueva a la más vieja, paginadas; «pending» dice cuántas hay pendientes. Filtros: status (draft, requested, accepted, cancelled), work_status (nuevo, en_curso, hecho), pendientes (aceptadas o pedidas con trabajo nuevo o en curso), from y to (AAAA-MM-DD), q (código, nombre, correo o teléfono).',
+            'scope' => 'read', 'inputSchema' => $obj(['status' => ['type' => 'string', 'enum' => array_keys(CONFIG_STATUSES)], 'work_status' => ['type' => 'string', 'enum' => array_keys(WORK_STATUSES)],
+                'pendientes' => ['type' => 'boolean', 'description' => 'true: solo lo aceptado o pedido con el trabajo «nuevo» o «en_curso»'],
+                'from' => $str('Desde AAAA-MM-DD'), 'to' => $str('Hasta AAAA-MM-DD'),
                 'q' => $str('Texto a buscar'), 'page' => $int('Página (1…)'), 'per_page' => $int('Por página (máx. 100, 25 por defecto)')]),
-            'example' => ['status' => 'accepted', 'from' => '2026-11-01', 'per_page' => 25],
-            'handler' => fn(array $a) => config_list(mcp_viewer(), $a, isset($a['page']) ? parse_int($a['page'], 'page') : 1, isset($a['per_page']) ? parse_int($a['per_page'], 'per_page', 1, 100) : 25),
+            'example' => ['pendientes' => true, 'per_page' => 25],
+            'handler' => function (array $a) {
+                if (isset($a['pendientes']) && !is_bool($a['pendientes'])) throw new UcError(t('pendientes es true o false (sin comillas).'));
+                return config_list(mcp_viewer(), $a, isset($a['page']) ? parse_int($a['page'], 'page') : 1, isset($a['per_page']) ? parse_int($a['per_page'], 'per_page', 1, 100) : 25);
+            },
         ],
         'config_get' => [
             'description' => 'Úsala para leer una configuración entera, también para dibujarla en CAD: nodo, cliente, estado en palabras, paredes con geometría (direction, origin_x_mm, origin_y_mm) y sus módulos en orden con width_mm/height_mm/depth_mm, tramo aplicado, precio (número y texto) y parts (el despiece calculado: cantidad, espesor, largo y ancho en mm). Total sin IVA, IVA y total con IVA. Si está aceptada, precios y piezas son la foto congelada.',
@@ -189,6 +203,36 @@ function mcp_tools(): array
             'effects' => ['irreversible'],
             'handler' => fn(array $a) => ['config' => config_accept((string) $a['code'], mcp_viewer()),
                 'note' => t('Aceptada y con el precio y el despiece congelados. Confirma a la persona el código y el total; para cambiarla habrá que duplicarla.')],
+        ],
+        'config_share' => [
+            'description' => 'ESCRIBE (crea un enlace). Úsala para mandar una configuración al cliente: enlace de solo lectura (sin datos personales en la URL ni en la página), firmado, que caduca en 30 días; y el enlace de WhatsApp con el texto listo. Una anulada no se comparte.',
+            'scope' => 'write', 'inputSchema' => $obj(['code' => $code], ['code']), 'example' => ['code' => 'UC-7K3F9QXM'],
+            'handler' => fn(array $a) => config_share((string) $a['code'], mcp_viewer()),
+        ],
+        'config_mark' => [
+            'description' => 'ESCRIBE (solo el estado de trabajo). Úsala cuando hayas procesado una configuración aceptada o con presupuesto pedido: work_status nuevo | en_curso | hecho y una nota corta (una línea, ≤ 200). No toca el precio, el despiece ni el estado de venta. Queda registrado quién lo marcó (el nombre de este token).',
+            'scope' => 'write', 'inputSchema' => $obj(['code' => $code, 'work_status' => ['type' => 'string', 'enum' => array_keys(WORK_STATUSES)], 'work_note' => $str('Nota corta, una línea (≤ 200)')], ['code', 'work_status']),
+            'example' => ['code' => 'UC-7K3F9QXM', 'work_status' => 'hecho', 'work_note' => 'Planos y presupuesto enviados'],
+            'handler' => fn(array $a) => ['config' => config_mark((string) $a['code'], mcp_viewer(), array_intersect_key($a, ['work_status' => 1, 'work_note' => 1]))],
+        ],
+        'lead_list' => [
+            'description' => 'Úsala para ver los clientes que han pedido presupuesto desde el configurador («Quiero este presupuesto»): nombre, teléfono, correo, mensaje, su configuración y total, estado (nuevo, contactado, cerrado) y estado de trabajo. Los nuevos sin trabajar primero; «pending» dice cuántos hay. Un admin ve todos; un comercial, los de sus configuraciones.',
+            'scope' => 'read', 'inputSchema' => $obj(['estado' => ['type' => 'string', 'enum' => array_keys(LEAD_STATUSES)], 'work_status' => ['type' => 'string', 'enum' => array_keys(WORK_STATUSES)],
+                'q' => $str('Nombre, teléfono o correo'), 'page' => $int('Página (1…)'), 'per_page' => $int('Por página (máx. 100, 25 por defecto)')]),
+            'example' => ['work_status' => 'nuevo'],
+            'handler' => fn(array $a) => lead_list(mcp_viewer(), $a, isset($a['page']) ? parse_int($a['page'], 'page') : 1, isset($a['per_page']) ? parse_int($a['per_page'], 'per_page', 1, 100) : 25),
+        ],
+        'lead_get' => [
+            'description' => 'Úsala para leer un lead entero antes de llamar o escribir al cliente: datos de contacto, mensaje, consentimiento, configuración (código y total) y estado de trabajo. Para ver los módulos, config_get con su configuration_code.',
+            'scope' => 'read', 'inputSchema' => $obj(['lead_id' => $int('Id del lead (ver lead_list)')], ['lead_id']), 'example' => ['lead_id' => 3],
+            'handler' => fn(array $a) => ['lead' => lead_get($a['lead_id'], mcp_viewer())],
+        ],
+        'lead_mark' => [
+            'description' => 'ESCRIBE (solo el seguimiento). Úsala cuando hayas trabajado un lead: work_status nuevo | en_curso | hecho, una nota corta (una línea, ≤ 200) y, si cambia, el estado comercial (estado: nuevo, contactado, cerrado). No toca la configuración.',
+            'scope' => 'write', 'inputSchema' => $obj(['lead_id' => $int('Id del lead'), 'work_status' => ['type' => 'string', 'enum' => array_keys(WORK_STATUSES)],
+                'work_note' => $str('Nota corta, una línea (≤ 200)'), 'estado' => ['type' => 'string', 'enum' => array_keys(LEAD_STATUSES)]], ['lead_id', 'work_status']),
+            'example' => ['lead_id' => 3, 'work_status' => 'hecho', 'estado' => 'contactado', 'work_note' => 'Llamado; visita el jueves'],
+            'handler' => fn(array $a) => ['lead' => lead_mark($a['lead_id'], mcp_viewer(), array_intersect_key($a, ['work_status' => 1, 'work_note' => 1, 'estado' => 1]))],
         ],
     ];
 }
@@ -286,7 +330,7 @@ function mcp_call(string $name, array $args): array
             if (!isset($args[$req]) || $args[$req] === '') throw new UcError(t("Falta el parámetro obligatorio '{p}'.", ['p' => $req]));
         }
         $result = ($tool['handler'])($args);
-        if ($tool['scope'] === 'read') audit("mcp.$name", mb_substr(json_enc(array_intersect_key($args, ['code' => 1, 'node_id' => 1, 'status' => 1, 'q' => 1, 'from' => 1, 'to' => 1])), 0, 200)); // las escrituras ya dejan su propia línea
+        if ($tool['scope'] === 'read') audit("mcp.$name", mb_substr(json_enc(array_intersect_key($args, ['code' => 1, 'node_id' => 1, 'status' => 1, 'q' => 1, 'from' => 1, 'to' => 1, 'work_status' => 1, 'pendientes' => 1, 'lead_id' => 1, 'estado' => 1])), 0, 200)); // las escrituras ya dejan su propia línea
         return ['content' => [['type' => 'text', 'text' => json_enc($result, true)]], 'structuredContent' => (object) $result, 'isError' => false];
     } catch (UcError $ex) {
         $txt = 'Error: ' . $ex->getMessage();

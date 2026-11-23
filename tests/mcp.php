@@ -54,13 +54,13 @@ check('initialize: versión, nombre e instrucciones con el flujo', function () u
     return eq('2025-06-18', $r['protocolVersion']) && eq('universal-configurator', $r['serverInfo']['name'])
         && eq(true, str_contains($r['instructions'], 'config_create') && str_contains($r['instructions'], 'price_check') && str_contains($r['instructions'], 'NO dibuja'));
 });
-check('tools/list con token write: las 9 herramientas', function () use ($rpc, $tAdminRW) {
+check('tools/list con token write: las 14 herramientas', function () use ($rpc, $tAdminRW) {
     $names = array_column(((array) $rpc($tAdminRW, 'tools/list')['result'])['tools'], 'name');
     sort($names);
-    return eq(['catalog_tree', 'config_accept', 'config_create', 'config_get', 'config_list', 'config_update', 'cut_list', 'module_types', 'price_check'], $names);
+    return eq(['catalog_tree', 'config_accept', 'config_create', 'config_get', 'config_list', 'config_mark', 'config_share', 'config_update', 'cut_list', 'lead_get', 'lead_list', 'lead_mark', 'module_types', 'price_check'], $names);
 });
-check('tools/list con token read: solo las 6 de lectura', function () use ($rpc, $tAdminR) {
-    return eq(6, count(((array) $rpc($tAdminR, 'tools/list')['result'])['tools']));
+check('tools/list con token read: solo las 8 de lectura', function () use ($rpc, $tAdminR) {
+    return eq(8, count(((array) $rpc($tAdminR, 'tools/list')['result'])['tools']));
 });
 check('config_accept avisa en su descripción de que lo confirma la persona', function () use ($rpc, $tAdminRW) {
     $tools = array_column(((array) $rpc($tAdminRW, 'tools/list')['result'])['tools'], 'description', 'name');
@@ -216,6 +216,60 @@ check('cut_list: lista de corte agregada con su origen', function () use ($call,
     return eq(4, $lat['qty']) && eq(2, count($lat['from'])) && eq(true, isset($lat['from'][0]['item_id'], $lat['from'][0]['module']));
 });
 check('cut_list de otro comercial: No existe', fn() => $err($call($tBeto, 'cut_list', ['code' => $dec['code']]), 'No existe'));
+// --- v0.3: lo nuevo sin procesar, leads, compartir y marcar el trabajo
+if (!is_file(UC_DATA . '/config.php')) file_put_contents(UC_DATA . '/config.php', "<?php return ['secret' => '" . bin2hex(random_bytes(16)) . "'];");
+settings_save(['url_publica' => 'https://configurador.example.com']);
+$acc = $ok($call($tAna, 'config_create', ['node_id' => $c['blanco']]))['config'];
+$ok($call($tAna, 'config_accept', ['code' => $acc['code']]));
+$gv = ['kind' => 'guest', 'codes' => []];
+$g = config_create($c['blanco'], $gv); $gv['codes'][] = $g['code'];
+$req = config_request($g['code'], $gv, ['name' => 'Lucía Pérez', 'phone' => '600 111 222', 'consent' => 1], false);
+throttle_clear('lead:' . client_ip_key());
+check('initialize explica cómo trabajar lo nuevo (pendientes → config_mark) y los leads', function () use ($rpc, $tAna) {
+    $i = ((array) $rpc($tAna, 'initialize')['result'])['instructions'];
+    return eq(true, str_contains($i, 'config_list(pendientes=true)') && str_contains($i, 'config_mark(') && str_contains($i, 'lead_list(work_status="nuevo")'));
+});
+check('config_list(pendientes=true): la aceptada nueva sale primero y dice cuántas hay', function () use ($call, $tAna, $acc, $ok) {
+    $d = $ok($call($tAna, 'config_list', ['pendientes' => true]));
+    return eq($acc['code'], $d['items'][0]['code']) && eq('nuevo', $d['items'][0]['work_status']) && eq($d['pending'], $d['total']);
+});
+check_error('pendientes con comillas = error', fn() => throw new UcError($err($call($tAna, 'config_list', ['pendientes' => 'sí']), 'true o false') ? 'true o false' : ''), 'true o false');
+check('config_mark: cambia el trabajo, deja quién (el token) y no toca el precio', function () use ($call, $tAna, $acc, $ok) {
+    $before = $ok($call($tAna, 'config_list', ['pendientes' => true]))['total'];
+    $d = $ok($call($tAna, 'config_mark', ['code' => $acc['code'], 'work_status' => 'hecho', 'work_note' => 'Planos enviados']))['config'];
+    return eq('hecho', $d['work_status']) && eq(true, str_contains($d['work_by'], 'ADRI de Ana')) && eq($acc['total_cents'], $d['total_cents'])
+        && eq($before - 1, $ok($call($tAna, 'config_list', ['pendientes' => true]))['total']);
+});
+check('config_mark: un token de solo lectura no marca', fn() => $err($call($tAdminR, 'config_mark', ['code' => $acc['code'], 'work_status' => 'hecho']), "permiso 'write'"));
+check('config_mark: Beto no marca la de Ana', fn() => $err($call($tBeto, 'config_mark', ['code' => $acc['code'], 'work_status' => 'hecho']), 'No existe'));
+check('config_mark: parámetro desconocido = error', fn() => $err($call($tAna, 'config_mark', ['code' => $acc['code'], 'work_status' => 'hecho', 'prioridad' => 'alta']), 'prioridad'));
+check('lead_list y lead_get: el admin ve el lead del invitado; Ana (comercial) no', function () use ($call, $tAdminRW, $tAna, $req, $ok, $err) {
+    $l = $ok($call($tAdminRW, 'lead_list', ['work_status' => 'nuevo']));
+    $one = $ok($call($tAdminRW, 'lead_get', ['lead_id' => $req['lead_id']]))['lead'];
+    return eq(1, $l['total']) && eq('Lucía Pérez', $one['name']) && eq($req['config']['code'], $one['configuration_code']) && eq('nuevo', $one['work_status'])
+        && eq(0, $ok($call($tAna, 'lead_list', []))['total']) && $err($call($tAna, 'lead_get', ['lead_id' => $req['lead_id']]), 'No existe');
+});
+check('lead_mark: trabajo y estado comercial; estado inventado = error', function () use ($call, $tAdminRW, $req, $ok, $err) {
+    $d = $ok($call($tAdminRW, 'lead_mark', ['lead_id' => $req['lead_id'], 'work_status' => 'en_curso', 'estado' => 'contactado', 'work_note' => 'Llamada hecha']))['lead'];
+    return eq(['contactado', 'en_curso', 'Llamada hecha'], [$d['estado'], $d['work_status'], $d['work_note']]) && $err($call($tAdminRW, 'lead_mark', ['lead_id' => $req['lead_id'], 'work_status' => 'hecho', 'estado' => 'ganado']), 'ganado');
+});
+check('config_share: enlace firmado con la URL pública y WhatsApp; Beto no comparte la de Ana', function () use ($call, $tAna, $tBeto, $acc, $ok, $err) {
+    $d = $ok($call($tAna, 'config_share', ['code' => $acc['code']]));
+    return eq(1, preg_match('#^https://configurador\.example\.com/ver/' . $acc['code'] . '\.\d+\.[a-f0-9]{32}$#', $d['url'])) && eq(true, str_contains($d['whatsapp_url'], 'wa.me'))
+        && $err($call($tBeto, 'config_share', ['code' => $acc['code']]), 'No existe');
+});
+check('config_accept con un token de un cliente: no (aceptar es del equipo)', function () use ($call, $c, $err) {
+    $cli = fx_user('cliente', 'cli-mcp@x.test');
+    $t = token_create('ADRI cliente', ['read', 'write'], (int) $cli['id']);
+    $d = config_create($c['blanco'], ['kind' => 'user', 'user' => $cli]);
+    return $err($call($t, 'config_accept', ['code' => $d['code']]), 'comercial o del administrador');
+});
+check('marcar y compartir no son irreversibles (sin destructiveHint)', function () use ($rpc, $tAdminRW) {
+    $tools = array_column(((array) $rpc($tAdminRW, 'tools/list')['result'])['tools'], null, 'name');
+    return eq(false, $tools['config_mark']['annotations']['destructiveHint']) && eq(false, $tools['lead_mark']['annotations']['destructiveHint'])
+        && eq(true, $tools['lead_list']['annotations']['readOnlyHint']);
+});
+
 check('initialize dice cómo dibujar en CAD', function () use ($rpc, $tAna) {
     return eq(true, (bool) stripos(((array) $rpc($tAna, 'initialize')['result'])['instructions'], 'para dibujar en CAD usa config_get (medidas y despiece) o cut_list'));
 });
