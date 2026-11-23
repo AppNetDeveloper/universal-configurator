@@ -584,18 +584,22 @@ function page_clamp(int $page): int
 }
 
 /**
- * Limita intentos. Devuelve false si se supera $max en $window segundos. Una sola sentencia (contar y comprobar a la
- * vez, también cuando la ventana caducó): con muchas peticiones simultáneas entran exactamente $max, ni una más.
+ * Limita intentos. Devuelve false si se supera $max en $window segundos. Contar y comprobar van juntos (también cuando
+ * la ventana caducó): con muchas peticiones simultáneas entran exactamente $max, ni una más.
  */
 function throttle(string $key, int $max, int $window): bool
 {
     $t = time();
     if (random_int(1, 100) === 1) throttle_purge(); // la tabla no crece sin límite
-    $hits = (int) val('INSERT INTO throttle (key, hits, reset_at) VALUES (:k, 1, :r)
-        ON CONFLICT(key) DO UPDATE SET
-            hits = CASE WHEN throttle.reset_at < :t THEN 1 ELSE min(throttle.hits, :max) + 1 END,
-            reset_at = CASE WHEN throttle.reset_at < :t THEN :r ELSE throttle.reset_at END
-        RETURNING hits', ['k' => $key, 'r' => $t + $window, 't' => $t, 'max' => $max]);
+    // Sumar y leer dentro de una transacción de escritura (BEGIN IMMEDIATE): nadie se cuela entre medias.
+    // (Sin RETURNING, que pide SQLite 3.35: una instalación que actualiza con un SQLite más viejo sigue funcionando.)
+    $hits = (int) tx(function () use ($key, $max, $window, $t) {
+        q('INSERT INTO throttle (key, hits, reset_at) VALUES (:k, 1, :r)
+            ON CONFLICT(key) DO UPDATE SET
+                hits = CASE WHEN throttle.reset_at < :t THEN 1 ELSE min(throttle.hits, :max) + 1 END,
+                reset_at = CASE WHEN throttle.reset_at < :t THEN :r ELSE throttle.reset_at END', ['k' => $key, 'r' => $t + $window, 't' => $t, 'max' => $max]);
+        return val('SELECT hits FROM throttle WHERE key = ?', [$key]);
+    });
     return $hits <= $max;
 }
 

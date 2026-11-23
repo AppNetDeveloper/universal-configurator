@@ -13,7 +13,7 @@ Arreglos de una revisión de seguridad independiente (cada uno con su prueba, pr
   paquete firmado de verdad.
 - **Actualizaciones:** el paquete se comprueba (sha256) y se extrae de la misma copia privada.
 - **Límites atómicos:** `throttle()` cuenta y comprueba en una sola sentencia (antes, con peticiones simultáneas,
-  entraban 15 peticiones de presupuesto con un límite de 5). Requisito nuevo: SQLite 3.35.
+  entraban 15 peticiones de presupuesto con un límite de 5).
 - **Compartir y cambiar con límite:** `config_share` 60 por hora (el mismo día da el mismo enlace y una sola fila en
   la actividad); cambios y deshacer, 600 llamadas cada 10 minutos por persona o conexión.
 - **Restaurar:** las imágenes se vuelven a codificar con GD (sin GD, una copia con imágenes no se restaura); el tope
