@@ -36,7 +36,7 @@ $logo = setting('logo');
     <?php endif; ?>
   </div>
   <?php if ($section !== '' && is_admin($user)): ?>
-  <nav class="subnav" aria-label="<?= te('Panel') ?>"><div class="wrap subnav-in">
+  <nav class="subnav" aria-label="<?= te('Panel') ?>"><div class="wrap wide subnav-in">
     <?php foreach (ADMIN_SECTIONS as $href => $label): ?>
       <a href="/admin<?= $href === '/' ? '' : e($href) ?>"<?= $section === $href ? ' aria-current="page"' : '' ?>><?= te($label) ?></a>
     <?php endforeach; ?>
