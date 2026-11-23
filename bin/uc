@@ -1,0 +1,55 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+// Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE)
+//
+// Línea de órdenes (como el usuario del servidor web, p. ej. sudo -u www-data php bin/uc …):
+//   install --empresa="Mi empresa" --email=admin@x.com [--name=Admin] [--url=https://configurador.x.com] [--timezone=Europe/Madrid] [--sample]
+//            La contraseña llega por la variable UC_PASSWORD o por la entrada estándar (no queda en `ps`).
+//   sample                         carga los datos de ejemplo (solo con el catálogo vacío)
+//   token --name=ADRI --email=persona@x.com [--scopes=read,write]   crea un token MCP y lo muestra UNA vez
+//   reset-link --email=persona@x.com                                 enlace de 72 h para poner la contraseña
+
+if (PHP_SAPI !== 'cli') exit(1);
+require dirname(__DIR__) . '/app/bootstrap.php';
+
+$cmd = $argv[1] ?? '';
+$opt = [];
+foreach (array_slice($argv, 2) as $a) {
+    if (preg_match('/^--([a-z_-]+)(?:=(.*))?$/s', $a, $m)) $opt[$m[1]] = $m[2] ?? true;
+}
+$out = fn(string $s) => fwrite(STDOUT, $s . "\n");
+$fail = function (string $s): never { fwrite(STDERR, "Error: $s\n"); exit(1); };
+Actor::set('cli');
+
+try {
+    switch ($cmd) {
+        case 'install':
+            $pw = getenv('UC_PASSWORD') ?: '';
+            if ($pw === '' && !stream_isatty(STDIN)) $pw = rtrim((string) fgets(STDIN), "\r\n");
+            $id = uc_install(['empresa' => $opt['empresa'] ?? '', 'admin_email' => $opt['email'] ?? '', 'admin_name' => $opt['name'] ?? 'Administrador',
+                'admin_password' => $pw, 'timezone' => $opt['timezone'] ?? 'Europe/Madrid', 'url' => $opt['url'] ?? '', 'sample' => isset($opt['sample'])]);
+            $out("Instalado. Administrador #$id: " . ($opt['email'] ?? ''));
+            break;
+        case 'sample':
+            if (!is_installed()) $fail('Primero instala.');
+            seed_sample();
+            $out('Datos de ejemplo cargados.');
+            break;
+        case 'token':
+            if (!is_installed()) $fail('Primero instala.');
+            $u = user_by_email((string) ($opt['email'] ?? '')) ?? $fail('No existe esa persona (--email).');
+            $out(token_create((string) ($opt['name'] ?? 'ADRI'), explode(',', (string) ($opt['scopes'] ?? 'read,write')), (int) $u['id']));
+            break;
+        case 'reset-link':
+            if (!is_installed()) $fail('Primero instala.');
+            $u = user_by_email((string) ($opt['email'] ?? '')) ?? $fail('No existe esa persona (--email).');
+            $out(reset_link(password_reset_create((int) $u['id'], INVITE_TTL)));
+            break;
+        default:
+            $out("Uso: php bin/uc install|sample|token|reset-link [opciones]  (ver la cabecera de bin/uc)");
+            exit($cmd === '' || $cmd === 'help' ? 0 : 1);
+    }
+} catch (UcError $ex) {
+    $fail($ex->getMessage());
+}

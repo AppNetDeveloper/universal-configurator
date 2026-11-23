@@ -1,0 +1,35 @@
+# Universal Configurator · Nginx + PHP-FPM
+# Copia a /etc/nginx/sites-available/universal-configurator, ajusta dominio y socket, y actívalo.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name configurador.example.com;
+
+    root /var/www/universal-configurator/public;   # SOLO public/: app/ y data/ nunca se sirven
+    index index.php;
+    client_max_body_size 2m;
+
+    location ~ /\.(?!well-known) { deny all; }
+
+    location ~* \.(css|js|png|jpe?g|gif|webp|svg|ico|woff2?)$ {
+        try_files $uri =404;
+        expires 7d;
+        add_header Cache-Control "public";
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location / {
+        try_files $uri /index.php$is_args$args;
+    }
+
+    location = /index.php {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root/index.php;
+        fastcgi_param HTTP_AUTHORIZATION $http_authorization;   # necesario para el MCP (token Bearer)
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+        fastcgi_read_timeout 60s;
+    }
+
+    location ~ \.php$ { return 404; }
+}
+# HTTPS: certbot --nginx -d configurador.example.com

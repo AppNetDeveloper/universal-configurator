@@ -1,0 +1,22 @@
+# Universal Configurator · Apache 2.4 + PHP-FPM (mod_proxy_fcgi) o mod_php
+# Copia a /etc/apache2/sites-available/universal-configurator.conf, ajusta y: a2ensite universal-configurator && a2enmod rewrite headers
+<VirtualHost *:80>
+    ServerName configurador.example.com
+    DocumentRoot /var/www/universal-configurator/public
+
+    <Directory /var/www/universal-configurator/public>
+        AllowOverride All          # usa public/.htaccess (controlador frontal y cabecera Authorization para el MCP)
+        Require all granted
+        Options -Indexes
+    </Directory>
+    # Por si el DocumentRoot se cambia por error: nada fuera de public/ se sirve
+    <Directory /var/www/universal-configurator/data>
+        Require all denied
+    </Directory>
+
+    # Con PHP-FPM:
+    # <FilesMatch "^index\.php$">
+    #     SetHandler "proxy:unix:/run/php/php8.2-fpm.sock|fcgi://localhost"
+    # </FilesMatch>
+</VirtualHost>
+# HTTPS: certbot --apache -d configurador.example.com

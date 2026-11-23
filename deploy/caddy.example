@@ -1,0 +1,15 @@
+# Universal Configurator · Caddy (HTTPS automático con Let's Encrypt)
+# Copia a /etc/caddy/Caddyfile, cambia el dominio y la versión de PHP-FPM, y: systemctl reload caddy
+configurador.example.com {
+	root * /var/www/universal-configurator/public
+	encode zstd gzip
+	header -Server
+	# Solo public/ es raíz: app/, data/ y tests/ quedan fuera. Ningún .php salvo index.php.
+	@php_otros {
+		path *.php
+		not path /index.php
+	}
+	respond @php_otros 404
+	php_fastcgi unix//run/php/php8.2-fpm.sock
+	file_server
+}
