@@ -55,9 +55,10 @@ persigue y fabrica.** La app capta clientes; Adri es la cuota mensual.
 
 ## Hoja de ruta
 
-- **v0.2 (ahora)**: datos de demo llenos (cocinas, armarios, baños), ilustraciones propias, subida de imágenes, capturas.
-- **v0.3 (cliente final)**: rediseño móvil según las reglas de arriba; compartir por enlace/WhatsApp; «que me llamen»
-  (lead) con herramienta MCP `lead_list`; deshacer; iconos de módulo; tarjeta «Conecta Adri» y acciones «Con Adri».
-- **v0.4 (Adri vende)**: herramienta MCP `config_share` (enlace para el cliente), `lead_get`; en ADRI, del aceptado a
+- **v0.2 (hecha)**: datos de demo llenos (cocinas, armarios, baños), ilustraciones propias, subida de imágenes, capturas.
+- **v0.3 (hecha)**: rediseño móvil según las reglas de arriba; compartir por enlace/WhatsApp; «Quiero este presupuesto»
+  (lead); deshacer; iconos de módulo; tarjeta «Conecta Adri» y acciones «Con Adri»; copias y actualización automática;
+  MCP `lead_list`, `lead_get`, `config_share`, `config_mark`, `lead_mark` y `config_list(pendientes)`.
+- **v0.4 (Adri vende)**: en ADRI, del aceptado a
   presupuesto de BionicEye con plano adjunto; cita de medición; recordatorio.
 - **v0.5 (producción)**: orden de fabricación, optimización de corte por tableros, pedido de material.
