@@ -37,7 +37,7 @@ foreach ($tiers as $tr) $groups[$tr['node_id'] === null ? 0 : (int) $tr['node_id
           <?php endforeach; ?>
           </tbody>
         </table>
-        <?php foreach (tier_gaps($list) as $g): ?><p class="notice small"><?= te('Hueco entre {a} y {b} cm: un ancho como {c} cm no tiene precio. Si debe tenerlo, empieza el tramo siguiente en {d}.', ['a' => cm_text($g['from_mm']), 'b' => cm_text($g['to_mm']), 'c' => cm_text($g['from_mm'] + 5), 'd' => cm_text($g['from_mm'] + 1)]) ?></p><?php endforeach; ?>
+        <?php foreach (tier_gaps($list) as $g): $next = array_values(array_filter($list, fn($x) => $x['from_mm'] === $g['to_mm']))[0] ?? null; ?><p class="notice small"><?= te('{a}–{b} cm se cobra como el tramo siguiente ({f}–{t}).', ['a' => cm_text($g['from_mm'] + 1), 'b' => cm_text($g['to_mm'] - 1), 'f' => $next ? cm_text($next['from_mm']) : cm_text($g['to_mm']), 't' => $next ? cm_text($next['to_mm']) : '…']) ?></p><?php endforeach; ?>
       <?php endforeach; ?>
       <form method="post" action="/admin/tipos/<?= (int) $type['id'] ?>/tramo" class="row-form tight">
         <?= csrf_field() ?>

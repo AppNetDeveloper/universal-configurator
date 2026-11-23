@@ -82,8 +82,9 @@ function mcp_instructions(): string
     corte) → config_accept SOLO si la persona lo ha confirmado expresamente tras ver el total.
 
     ESCRIBEN: config_create, config_update y config_accept (permiso write). Las demás solo leen (read).
-    PRECIO: tramos [desde, hasta] cm, ambos incluidos, con un precio fijo por tramo; no se cobra por cm. Un ancho sin
-    tramo o fuera del mínimo/máximo del tipo no es válido: el error dice qué vale. Total en EUR SIN IVA; el IVA aparte.
+    PRECIO: tramos [desde, hasta] cm, ambos incluidos, con un precio fijo por tramo; no se cobra por cm. Un ancho que cae
+    en un hueco entre dos tramos se cobra como el tramo de ARRIBA (tier_rule "next_up" y tier_note lo dicen). Por debajo
+    del primer tramo, por encima del último o fuera del mínimo/máximo del tipo no es válido: el error dice qué vale. Total en EUR SIN IVA; el IVA aparte.
     Aceptar congela precio y despiece; una aceptada no se edita: config_create con copy_of la duplica.
 
     La aplicación NO dibuja planos: los dibujas tú. Para dibujar en CAD usa config_get (medidas y despiece) o cut_list: medidas en mm, piezas con cantidad, espesor,
@@ -240,7 +241,8 @@ function mcp_price_check(array $a): array
     }
     $p = precio_configuracion($nodeId, [['name' => '', 'items' => $items]]);
     $lines = array_map(fn($l) => ['module_type_id' => $l['module_type_id'], 'type_name' => $l['type_name'], 'width_cm' => $l['width_cm'], 'width_mm' => $l['width_mm'],
-        'valid' => $l['valid'], 'tier_from_cm' => $l['tier_from_cm'], 'tier_to_cm' => $l['tier_to_cm'], 'price' => eur($l['price']), 'price_text' => money($l['price']),
+        'valid' => $l['valid'], 'tier_from_cm' => $l['tier_from_cm'], 'tier_to_cm' => $l['tier_to_cm'], 'tier_rule' => $l['tier_rule'], 'tier_note' => $l['tier_note'],
+        'price' => eur($l['price']), 'price_text' => money($l['price']),
         'error' => $l['error'] ?? null, 'tiers' => $l['valid'] ? [] : tiers_public($l['tiers'])], $p['walls'][0]['items']);
     return ['node_id' => $nodeId, 'node' => node_path_text($nodeId), 'is_final' => node_is_final($nodeId), 'lines' => $lines, 'valid' => $p['valid'],
         'invalid_count' => $p['invalid_count'], 'currency' => 'EUR', 'total' => eur($p['total']), 'total_text' => money($p['total']), 'tax_rate' => $p['tax_rate'],

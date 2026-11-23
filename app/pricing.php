@@ -5,7 +5,9 @@ declare(strict_types=1);
 /**
  * Motor de precios. UNA verdad, en el servidor:
  *  - Precio de un módulo = el del tramo cuyo [desde_cm, hasta_cm] (ambos incluidos) contiene su ancho. No se cobra por cm.
- *  - Sin tramo que lo contenga, la medida NO es válida (la línea sale sin precio y con los tramos posibles).
+ *  - Si el ancho cae en un HUECO entre dos tramos, se cobra el TRAMO DE ARRIBA (el primero cuyo «desde» es mayor que el
+ *    ancho), nunca uno inferior: tier_rule = 'next_up' y una nota en llano. Lo que queda por debajo del primer tramo o
+ *    por encima del último, o fuera del mínimo/máximo del tipo, NO es válido (sin precio y con los tramos posibles).
  *  - Tramos por nodo: el antepasado más cercano (empezando por el propio nodo) que tenga tramos de ese tipo
  *    SUSTITUYE a los generales del tipo; si ninguno tiene, valen los generales.
  *  - Total = suma de líneas válidas, en céntimos, sin IVA. El IVA (ajustes) solo se muestra aparte.
@@ -33,12 +35,36 @@ function tiers_effective(int $typeId, int $nodeId): array
     return ['node_id' => null, 'tiers' => array_map('tier_row', rows('SELECT * FROM price_tiers WHERE module_type_id = ? AND node_id IS NULL ORDER BY from_mm', [$typeId]))];
 }
 
-/** @return array{tier:?array, tiers:list, node_id:?int} — $widthMm en mm */
+/**
+ * El tramo que se cobra para un ancho (mm): el que lo contiene ('exact') o, si cae en un hueco entre dos tramos, el de
+ * arriba ('next_up'). Por debajo del primero o por encima del último: null. Única regla; la usan todos.
+ * @return array{tier:array, rule:string}|null
+ */
+function tier_match(array $tiers, int $widthMm): ?array
+{
+    usort($tiers, fn($a, $b) => $a['from_mm'] <=> $b['from_mm']);
+    $below = false;
+    foreach ($tiers as $t) {
+        if ($widthMm >= $t['from_mm'] && $widthMm <= $t['to_mm']) return ['tier' => $t, 'rule' => 'exact'];
+        if ($t['from_mm'] > $widthMm) return $below ? ['tier' => $t, 'rule' => 'next_up'] : null;
+        $below = true; // hay un tramo entero por debajo del ancho
+    }
+    return null;
+}
+
+/** Nota en llano cuando se cobra el tramo de arriba; null si el ancho cae dentro de su tramo. */
+function tier_note(int $widthMm, ?array $tier, ?string $rule): ?string
+{
+    if ($rule !== 'next_up' || !$tier) return null;
+    return t('{w} cm está entre tramos: se cobra como {f}–{t} cm.', ['w' => cm_text($widthMm), 'f' => cm_text($tier['from_mm']), 't' => cm_text($tier['to_mm'])]);
+}
+
+/** @return array{tier:?array, rule:?string, tiers:list, node_id:?int} — $widthMm en mm */
 function tier_lookup(int $typeId, int $nodeId, int $widthMm): array
 {
     $eff = tiers_effective($typeId, $nodeId);
-    foreach ($eff['tiers'] as $t) if ($widthMm >= $t['from_mm'] && $widthMm <= $t['to_mm']) return ['tier' => $t, 'tiers' => $eff['tiers'], 'node_id' => $eff['node_id']];
-    return ['tier' => null, 'tiers' => $eff['tiers'], 'node_id' => $eff['node_id']];
+    $m = tier_match($eff['tiers'], $widthMm);
+    return ['tier' => $m['tier'] ?? null, 'rule' => $m['rule'] ?? null, 'tiers' => $eff['tiers'], 'node_id' => $eff['node_id']];
 }
 
 function tiers_text(array $tiers): string
@@ -165,7 +191,8 @@ function precio_configuracion(int $nodeId, array $walls): array
             $type = $types[$typeId] ??= module_type_get($typeId);
             $line = array_intersect_key($it, ['id' => 1, 'height_mm' => 1, 'depth_mm' => 1]) + ['module_type_id' => $typeId, 'type_name' => $type['name'] ?? null,
                 'family' => $type['family'] ?? null, 'width_mm' => $width, 'width_cm' => mm_to_cm($width), 'valid' => false, 'price' => null,
-                'tier_from_mm' => null, 'tier_to_mm' => null, 'tier_from_cm' => null, 'tier_to_cm' => null, 'tier_node_id' => null, 'tiers' => []];
+                'tier_from_mm' => null, 'tier_to_mm' => null, 'tier_from_cm' => null, 'tier_to_cm' => null, 'tier_rule' => null, 'tier_note' => null,
+                'tier_node_id' => null, 'tiers' => []];
             $count++;
             if (!$type) {
                 $line['error'] = t('El tipo de módulo {id} no existe.', ['id' => $typeId]);
@@ -174,12 +201,11 @@ function precio_configuracion(int $nodeId, array $walls): array
                 $line['tiers'] = $eff['tiers'];
                 $line['tier_node_id'] = $eff['node_id'];
                 $range = width_range_error($type, $width);
-                foreach ($range === null ? $eff['tiers'] : [] as $t) {
-                    if ($width >= $t['from_mm'] && $width <= $t['to_mm']) {
-                        $line = array_merge($line, ['valid' => true, 'price' => $t['price'], 'tier_from_mm' => $t['from_mm'], 'tier_to_mm' => $t['to_mm'],
-                            'tier_from_cm' => $t['from_cm'], 'tier_to_cm' => $t['to_cm']]);
-                        break;
-                    }
+                $m = $range === null ? tier_match($eff['tiers'], $width) : null;
+                if ($m) {
+                    $t = $m['tier'];
+                    $line = array_merge($line, ['valid' => true, 'price' => $t['price'], 'tier_from_mm' => $t['from_mm'], 'tier_to_mm' => $t['to_mm'],
+                        'tier_from_cm' => $t['from_cm'], 'tier_to_cm' => $t['to_cm'], 'tier_rule' => $m['rule'], 'tier_note' => tier_note($width, $t, $m['rule'])]);
                 }
                 if (!$line['valid']) $line['error'] = $range ?? tiers_error_text($type['name'], $width, $eff['tiers']);
             }

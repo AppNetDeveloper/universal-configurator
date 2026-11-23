@@ -94,6 +94,11 @@ check('price_check: precio por línea, total y la medida que no vale', function 
     $d = $ok($call($tAna, 'price_check', ['node_id' => $c['blanco'], 'modules' => [['module_type_id' => $c['bajo'], 'width_cm' => 40], ['module_type_id' => $c['bajo'], 'width_cm' => 95]]]));
     return eq(80.0, $d['total']) && eq(false, $d['valid']) && eq(false, $d['lines'][1]['valid']) && eq(true, str_contains($d['lines'][1]['error'], '41–60'));
 });
+check('price_check en un hueco entre tramos: tramo de arriba con tier_rule next_up y su nota', function () use ($call, $tAna, $c, $ok) {
+    $d = $ok($call($tAna, 'price_check', ['node_id' => $c['blanco'], 'modules' => [['module_type_id' => $c['bajo'], 'width_cm' => '40,5']]]));
+    $l = $d['lines'][0];
+    return eq(true, $l['valid']) && eq('next_up', $l['tier_rule']) && eq(41, $l['tier_from_cm']) && eq('40,5 cm está entre tramos: se cobra como 41–60 cm.', $l['tier_note']) && eq(100.0, $d['total']);
+});
 check('price_check no guarda nada', fn() => eq(0, (int) val('SELECT COUNT(*) FROM configurations')));
 
 // --- escribir

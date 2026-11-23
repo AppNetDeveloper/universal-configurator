@@ -177,6 +177,7 @@
     if (it.height_mm && it.depth_mm) card.appendChild(h('p', { class: 'mod-dims', text: T.dims.replace('{w}', String(it.width_mm)).replace('{h}', String(it.height_mm)).replace('{d}', String(it.depth_mm)) }));
 
     if (invalid) card.appendChild(h('p', { class: 'mod-error', role: 'alert', text: err ? err.msg : it.error }));
+    else if (it.tier_note) card.appendChild(h('p', { class: 'mod-note', text: it.tier_note }));
 
     if (tiers && tiers.length) {
       var row = h('div', { class: 'tiers', 'aria-label': T.tiers });

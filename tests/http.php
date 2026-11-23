@@ -158,6 +158,10 @@ check('el panel pinta catálogo, tipos, ajustes, tokens y actividad', function (
     }
     return true;
 });
+check('panel: el aviso de huecos es informativo (se cobra como el tramo siguiente)', function () use ($adm) {
+    $p = $adm->get('/admin/tipos/3')['body'];
+    return eq(true, str_contains($p, '50,1–50,9 cm se cobra como el tramo siguiente (51–60)'));
+});
 check('tramo que solapa en el panel: aviso y no se guarda', function () use ($adm, $adminCsrf) {
     $tid = 1;
     $r = $adm->post("/admin/tipos/$tid/tramo", ['_csrf' => $adminCsrf, 'from_cm' => '35', 'to_cm' => '45', 'price' => '99', 'node_id' => '']);

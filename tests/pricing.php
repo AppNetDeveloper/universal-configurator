@@ -84,6 +84,42 @@ check('tipo sin tramos en el nodo usa los generales (Alto en Roble)', function (
     return eq(5000, $line(precio_configuracion($c['roble'], $walls([[$c['alto'], 45]])))['price']);
 });
 
+// --- hueco entre tramos: se cobra el TRAMO DE ARRIBA (regla del dueño, 23-nov)
+$mm = fn(int $node, int $type, int $w) => precio_configuracion($node, [['items' => [['module_type_id' => $type, 'width_mm' => $w]]]])['walls'][0]['items'][0];
+check('dentro de un tramo: exact', fn() => eq('exact', $mm($c['blanco'], $c['bajo'], 400)['tier_rule']) && eq(null, $mm($c['blanco'], $c['bajo'], 400)['tier_note']));
+check('borde exacto (41 cm): exact en 41–60', fn() => eq(['exact', 410, 10000], [$mm($c['blanco'], $c['bajo'], 410)['tier_rule'], $mm($c['blanco'], $c['bajo'], 410)['tier_from_mm'], $mm($c['blanco'], $c['bajo'], 410)['price']]));
+check('hueco (40,5 cm, entre 30–40 y 41–60): se cobra el tramo de arriba y lo dice', function () use ($mm, $c) {
+    $l = $mm($c['blanco'], $c['bajo'], 405);
+    return eq(true, $l['valid']) && eq('next_up', $l['tier_rule']) && eq([410, 600, 10000], [$l['tier_from_mm'], $l['tier_to_mm'], $l['price']])
+        && eq('40,5 cm está entre tramos: se cobra como 41–60 cm.', $l['tier_note']);
+});
+check('por encima del último tramo sigue sin precio', fn() => eq(false, $mm($c['blanco'], $c['bajo'], 905)['valid']));
+check('por debajo del primer tramo no es un hueco entre tramos: sin precio', fn() => eq(false, $mm($c['blanco'], $c['bajo'], 250)['valid']));
+check('fuera del mínimo del tipo sigue sin precio aunque haya un tramo arriba', function () use ($mm, $c) {
+    $t = module_type_save(['name' => 'Con mínimo', 'min_width_mm' => 420, 'width_mm' => 500]);
+    tier_save($t, null, 30, 40, 100);
+    tier_save($t, null, 45, 60, 200);
+    $l = $mm($c['blanco'], $t, 410);
+    return eq(false, $l['valid']) && eq(true, str_contains($l['error'], 'fuera'));
+});
+check('tramos por nodo con hueco: Roble (de Dúo) en el hueco de Dúo se cobra el tramo de arriba de Dúo', function () use ($mm, $c) {
+    tier_save($c['bajo'], $c['duo'], 70, 80, 13000);
+    q('DELETE FROM price_tiers WHERE node_id = ?', [$c['roble']]); // que valgan los de Dúo
+    $l = $mm($c['roble'], $c['bajo'], 655);
+    return eq(['next_up', 700, 13000, $c['duo']], [$l['tier_rule'], $l['tier_from_mm'], $l['price'], $l['tier_node_id']]);
+});
+check('al aceptar se congela el tramo aplicado (el de arriba)', function () use ($c) {
+    $admin = fx_user('admin', 'adm-precio@x.test');
+    $v = ['kind' => 'user', 'user' => $admin];
+    $cfg = config_create($c['blanco'], $v);
+    $it = $cfg['walls'][0]['items'][0];
+    config_apply_ops($cfg['code'], [['op' => 'set_width', 'item_id' => $it['id'], 'width_cm' => '40,5']], $v);
+    $acc = config_accept($cfg['code'], $v);
+    $l = $acc['walls'][0]['items'][0];
+    return eq([410, 600, 'next_up'], [(int) val('SELECT tier_from_mm FROM config_items WHERE id = ?', [$it['id']]), $l['tier_to_mm'], $l['tier_rule']])
+        && eq(true, str_contains((string) $l['tier_note'], 'entre tramos'));
+});
+
 check('una sola función de precio: la API, el panel y el MCP llaman a precio_configuracion()', function () {
     $src = '';
     foreach (glob(dirname(__DIR__) . '/app/*.php') as $f) if (basename($f) !== 'pricing.php') $src .= file_get_contents($f);

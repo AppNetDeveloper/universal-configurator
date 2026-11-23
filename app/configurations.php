@@ -191,6 +191,10 @@ function config_pricing(array $cfg): array
                 'valid' => $it['price'] !== null, 'price' => $it['price'] === null ? null : (int) $it['price'],
                 'tier_from_mm' => $it['tier_from_mm'] === null ? null : (int) $it['tier_from_mm'], 'tier_to_mm' => $it['tier_to_mm'] === null ? null : (int) $it['tier_to_mm'],
                 'tier_from_cm' => mm_to_cm($it['tier_from_mm'] === null ? null : (int) $it['tier_from_mm']), 'tier_to_cm' => mm_to_cm($it['tier_to_mm'] === null ? null : (int) $it['tier_to_mm']),
+                // Foto: si el ancho quedó por debajo del tramo guardado, se cobró el tramo de arriba (hueco entre tramos).
+                'tier_rule' => $it['tier_from_mm'] === null ? null : ((int) $it['width_mm'] < (int) $it['tier_from_mm'] ? 'next_up' : 'exact'),
+                'tier_note' => $it['tier_from_mm'] !== null && (int) $it['width_mm'] < (int) $it['tier_from_mm']
+                    ? tier_note((int) $it['width_mm'], ['from_mm' => (int) $it['tier_from_mm'], 'to_mm' => (int) $it['tier_to_mm']], 'next_up') : null,
                 'tier_node_id' => null, 'tiers' => []];
         }
     }
@@ -222,6 +226,7 @@ function config_view(array $cfg): array
                 'valid' => $it['valid'], 'tier_from_cm' => $it['tier_from_cm'], 'tier_to_cm' => $it['tier_to_cm'],
                 'tier_from_mm' => $it['tier_from_mm'], 'tier_to_mm' => $it['tier_to_mm'],
                 'tier_text' => $it['valid'] ? cm_text($it['tier_from_mm']) . '–' . cm_text($it['tier_to_mm']) . ' cm' : null,
+                'tier_rule' => $it['tier_rule'] ?? null, 'tier_note' => $it['tier_note'] ?? null,
                 'price' => eur($it['price']), 'price_cents' => $it['price'], 'price_text' => money($it['price']),
                 'tiers' => tiers_public($it['tiers']), 'error' => $it['error'] ?? null,
                 'parts' => $parts, 'parts_ok' => !array_filter($parts, fn($x) => $x['error'] !== null),
