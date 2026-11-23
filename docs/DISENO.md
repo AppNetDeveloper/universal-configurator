@@ -31,8 +31,11 @@ fichero para traducir después), importar desde Excel.
   (58,5 cm = 585 mm). El alto y el fondo de cada línea salen del tipo de módulo (columnas `height_mm`/`depth_mm` de la
   línea preparadas para que en el futuro cada línea lleve los suyos).
 - **Precio de un módulo** = el del tramo cuyo `[desde, hasta]` (ambos incluidos; bordes con un decimal en cm, guardados
-  en mm) contiene su ancho: 58,5 cae en 41–60. Un hueco entre tramos (de 40 a 41) deja sin precio anchos como 40,5:
-  el panel lo avisa. Un ancho fuera del mínimo/máximo del tipo tampoco es válido. Si ningún
+  en mm) contiene su ancho: 58,5 cae en 41–60. Si el ancho cae en un **hueco entre dos tramos** se cobra el **tramo de
+  arriba** (el primero cuyo «desde» es mayor que el ancho), nunca uno inferior ni «sin precio»: con 41–50 y 51–60,
+  50,5 cm se cobra como 51–60; la línea lo dice (`tier_rule: "next_up"` y una nota en llano) y el panel lo explica en
+  cada hueco. Sigue sin ser válido lo que queda por debajo del primer tramo, por encima del último o fuera del
+  mínimo/máximo del tipo. Si ningún
   tramo lo contiene → la medida NO es válida y se rechaza diciendo qué tramos hay. Los tramos de un tipo no se solapan
   (validar al guardar). Opcional: tramos específicos de un nodo (modelo/color) que pisan a los generales del tipo.
 - **Total** = suma de módulos. Moneda EUR. Precios SIN IVA; el IVA (porcentaje en ajustes, por defecto 21) solo se

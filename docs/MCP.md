@@ -55,9 +55,11 @@ Todo lo demás solo lee. Cada llamada queda en **Panel → Actividad**.
 
 - **Tramos:** cada tipo tiene tramos `[desde, hasta]` en cm, con los dos bordes incluidos y un precio fijo por tramo;
   **no se cobra por cm**. 58,5 cae en 51–60.
-  - Si hay un hueco entre tramos (de 40 a 41 cm), un ancho como 40,5 **no tiene precio**.
-- **Medidas no válidas:** un ancho sin tramo, o fuera del ancho mínimo y máximo del tipo, no es válido. El error dice qué
-  vale.
+  - Si el ancho cae en un **hueco entre dos tramos** (p. ej. 50,5 con 41–50 y 51–60), se cobra el **tramo de arriba**
+    (51–60): la línea trae `tier_rule: "next_up"` y `tier_note` («50,5 cm está entre tramos: se cobra como 51–60 cm.»).
+    Dentro de un tramo, `tier_rule: "exact"`. No hay precio por debajo del primer tramo ni por encima del último.
+- **Medidas no válidas:** un ancho por debajo del primer tramo, por encima del último o fuera del ancho mínimo y máximo
+  del tipo no es válido. El error dice qué vale.
 - **Tramos por nodo:** un nodo (p. ej. un modelo) puede tener tramos propios de un tipo, que **sustituyen** a los
   generales. `module_types` con `node_id` da los que valen (`effective_tiers`).
 - **Total:** suma de líneas en **EUR sin IVA**. El IVA va aparte (`tax_rate`, `tax`, `total_with_tax`).
@@ -176,10 +178,12 @@ price_check {"node_id": 5, "modules": [{"module_type_id": 3, "width_cm": "58,5"}
 ```
 
 **Devuelve:**
-- por línea: `valid`, `price_text`, `tier_from_cm` y `tier_to_cm`, o `error` con los `tiers` posibles;
+- por línea: `valid`, `price_text`, `tier_from_cm`, `tier_to_cm`, `tier_rule` y `tier_note`, o `error` con los
+  `tiers` posibles;
 - en total: `total`, `total_text`, `tax`, `total_with_tax` y `saved: false`.
 
-En esa sesión, 58,5 dio 185,00 € (tramo 51–60) y 40,5 dio 160,00 € (tramo 40–50).
+En esa sesión, 58,5 dio 185,00 € (tramo 51–60) y 40,5 dio 160,00 € (tramo 40–50). Con la regla del tramo de arriba,
+50,5 en la cajonera (tramos 40–50 y 51–60) da 185,00 € con `tier_rule: "next_up"` (ver la llamada real más abajo).
 
 ### `cut_list` (read)
 
@@ -275,7 +279,7 @@ Otros:
 ## Respuestas «masticadas»
 
 - **Importes:** en número (`price`, en euros), en céntimos (`price_cents`) y como texto (`price_text`: «185,00 €»).
-- **Tramo aplicado:** `tier_text`, por ejemplo «51–60 cm».
+- **Tramo aplicado:** `tier_text`, por ejemplo «51–60 cm», y `tier_rule` («exact» o «next_up») con su `tier_note`.
 - **Medidas:** en cm (`width_cm`, `width_text`) y en mm (`*_mm`).
 - **Estado:** en palabras (`status_label`: «Borrador», «Aceptada», «Anulada»).
 - **Piezas:** calculadas por la aplicación, con la fórmula de cada una.
