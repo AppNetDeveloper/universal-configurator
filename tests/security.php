@@ -132,12 +132,23 @@ check('entrar bien con la cookie de OTRA cuenta no borra la racha de la cookie d
     login_attempt('admin@x.test', 'secreta123'); session_logout();
     $adminCookie = (string) $GLOBALS['uc_trust_cookie'];
     $_SERVER['REMOTE_ADDR'] = '10.12.0.1';
-    q("INSERT OR REPLACE INTO throttle (key, hits, reset_at) VALUES (?, 3, ?)", ['trust-streak:' . hash('sha256', $adminCookie), time() + 3600]);
+    q("INSERT OR REPLACE INTO throttle (key, hits, reset_at) VALUES (?, 3, ?)", ['trust-streak:' . trust_cookie_id($adminCookie), time() + 3600]);
     $_COOKIE['uc_trust'] = $adminCookie;
     login_attempt('ana@x.test', 'clave-de-ana'); session_logout(); // cookie de admin, login de Ana
     unset($_COOKIE['uc_trust']);
     $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
-    return eq(3, (int) val('SELECT hits FROM throttle WHERE key = ?', ['trust-streak:' . hash('sha256', $adminCookie)]));
+    return eq(3, (int) val('SELECT hits FROM throttle WHERE key = ?', ['trust-streak:' . trust_cookie_id($adminCookie)]));
+});
+check('dos logins seguidos en el mismo segundo dejan una cookie válida (cada cookie lleva su nonce)', function () {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    $same = trusted_device_value(1, time() + 100, 0) !== trusted_device_value(1, time() + 100, 0);
+    $GLOBALS['uc_clock_skew'] = 0;
+    login_attempt('admin@x.test', 'secreta123'); session_logout();
+    $_COOKIE['uc_trust'] = (string) $GLOBALS['uc_trust_cookie'];
+    login_attempt('admin@x.test', 'secreta123'); session_logout();
+    $last = (string) $GLOBALS['uc_trust_cookie'];
+    unset($_COOKIE['uc_trust']);
+    return eq(true, $same, 'el valor no es determinista') && eq(true, trusted_device_ok($last, 'admin@x.test')) && eq(1, preg_match('/^\d+\.\d+\.[A-Za-z0-9_-]{16}\.[a-f0-9]{64}$/', $last));
 });
 check('al emitir una cookie nueva, la anterior queda revocada (una copia robada no limpia su contador)', function () {
     q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
