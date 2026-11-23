@@ -175,6 +175,46 @@ function update_can_write(): array
     return [true, ''];
 }
 
+/**
+ * Copia el paquete a una carpeta privada nueva (0700) calculando su sha256 sobre lo que se copia, y lo compara con la
+ * huella firmada. Desde aquí solo se usa esa copia: lo que se comprueba es exactamente lo que se extrae (aunque alguien
+ * cambie el archivo descargado entre medias). Devuelve la ruta de la copia; quien llama borra su carpeta.
+ */
+function update_package_private(string $zipFile, array $m): string
+{
+    $in = @fopen($zipFile, 'rb');
+    if (!$in) throw new UcError(t('No se puede leer el paquete descargado.'));
+    $dir = sys_get_temp_dir() . '/uc-paquete-' . bin2hex(random_bytes(8));
+    if (!@mkdir($dir, 0700)) { fclose($in); throw new UcError(t('No se puede crear la carpeta temporal de la actualización.')); }
+    $priv = "$dir/paquete.zip";
+    $out = @fopen($priv, 'xb');
+    $ctx = hash_init('sha256');
+    $size = 0;
+    try {
+        if (!$out) throw new UcError(t('No se puede crear la carpeta temporal de la actualización.'));
+        while (!feof($in)) {
+            $c = (string) fread($in, 1 << 16);
+            if ($c === '') break;
+            $size += strlen($c);
+            if ($size > (int) $m['size']) break; // más grande de lo firmado: ya no coincide
+            hash_update($ctx, $c);
+            if (fwrite($out, $c) !== strlen($c)) throw new UcError(t('No se puede copiar el paquete (¿disco lleno?).'));
+        }
+        if ($size !== (int) $m['size'] || !hash_equals((string) $m['sha256'], hash_final($ctx))) {
+            throw new UcError(t('El paquete descargado no coincide con su huella firmada (sha256): no se instala.'));
+        }
+    } catch (Throwable $e) {
+        if ($out) fclose($out);
+        fclose($in);
+        @unlink($priv);
+        @rmdir($dir);
+        throw $e;
+    }
+    fclose($out);
+    fclose($in);
+    return $priv;
+}
+
 /** Valida el zip (rutas, enlaces, tamaño, versión, sintaxis PHP) y lo extrae en $dest. Devuelve archivo => permisos. */
 function update_extract(string $zipFile, array $m, string $dest): array
 {
@@ -234,9 +274,18 @@ function update_install_package(string $envelopeRaw, string $zipFile, string $by
     $m = update_verify_envelope($envelopeRaw, $publicKey);
     if (!update_newer(UC_VERSION, (string) $m['version'])) throw new UcError(t('La versión {v} no es más nueva que la instalada ({i}): no se instala.', ['v' => $m['version'], 'i' => UC_VERSION]));
     if (isset($m['min_php']) && version_compare(PHP_VERSION, (string) $m['min_php'], '<')) throw new UcError(t('La versión {v} necesita PHP {p} o superior.', ['v' => $m['version'], 'p' => $m['min_php']]));
-    if (!is_file($zipFile) || filesize($zipFile) !== (int) $m['size'] || !hash_equals((string) $m['sha256'], (string) hash_file('sha256', $zipFile))) {
-        throw new UcError(t('El paquete descargado no coincide con su huella firmada (sha256): no se instala.'));
+    // Desde aquí, solo la copia privada ya comprobada (la descargada no se vuelve a abrir).
+    $pkg = update_package_private($zipFile, $m);
+    try {
+        return update_install_checked($m, $pkg, $by);
+    } finally {
+        bk_rmtree(dirname($pkg));
     }
+}
+
+/** Fase 1 con el paquete ya comprobado ($pkg: copia privada cuya sha256 coincide con la firmada). */
+function update_install_checked(array $m, string $pkg, string $by): array
+{
     [$can, $why] = update_can_write();
     if (!$can) throw new UcError($why);
     $dir = update_dir();
@@ -257,7 +306,7 @@ function update_install_package(string $envelopeRaw, string $zipFile, string $by
         $maint = true;
         db()->exec('VACUUM INTO ' . db()->quote("$work/configurator.sqlite"));
         // 3) Paquete verificado → carpeta temporal
-        $new = update_extract($zipFile, $m, "$work/new");
+        $new = update_extract($pkg, $m, "$work/new");
         $old = update_installed_files();
         $toWrite = array_keys($new);
         $toDelete = $old === null ? [] : array_values(array_filter(array_diff(array_keys($old), $toWrite), fn($r) => uc_update_safe_rel((string) $r)));
