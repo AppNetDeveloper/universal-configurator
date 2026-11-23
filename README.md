@@ -41,7 +41,7 @@ Todas las pantallas, comentadas: [`docs/CAPTURAS.md`](docs/CAPTURAS.md).
 
 ## Requisitos
 
-- PHP 8.2 o superior con `pdo_sqlite`, `mbstring`, `sodium`, `json` y `zip` (copias de seguridad y actualizaciones).
+- PHP 8.2 o superior con `pdo_sqlite` (SQLite 3.35 o superior), `mbstring`, `sodium`, `json` y `zip` (copias de seguridad y actualizaciones).
   Recomendadas: `curl` (buscar actualizaciones desde el panel) y `gd` (las imágenes subidas se vuelven a guardar limpias).
 - Un servidor web que sirva **solo la carpeta `public/`** (Caddy, Nginx o Apache; ejemplos en `deploy/`).
 - La carpeta `data/` escribible por el usuario de PHP (ahí van la base de datos y `config.php`; nunca se sirve).

@@ -576,19 +576,20 @@ function request_header(string $name): ?string
     return $v;
 }
 
-/** Limita intentos. Devuelve false si se supera $max en $window segundos. */
+/**
+ * Limita intentos. Devuelve false si se supera $max en $window segundos. Una sola sentencia (contar y comprobar a la
+ * vez, también cuando la ventana caducó): con muchas peticiones simultáneas entran exactamente $max, ni una más.
+ */
 function throttle(string $key, int $max, int $window): bool
 {
     $t = time();
     if (random_int(1, 100) === 1) throttle_purge(); // la tabla no crece sin límite
-    $r = row('SELECT hits, reset_at FROM throttle WHERE key = ?', [$key]);
-    if (!$r || $r['reset_at'] < $t) {
-        q('INSERT OR REPLACE INTO throttle (key, hits, reset_at) VALUES (?, 1, ?)', [$key, $t + $window]);
-        return true;
-    }
-    if ($r['hits'] >= $max) return false;
-    q('UPDATE throttle SET hits = hits + 1 WHERE key = ?', [$key]);
-    return true;
+    $hits = (int) val('INSERT INTO throttle (key, hits, reset_at) VALUES (:k, 1, :r)
+        ON CONFLICT(key) DO UPDATE SET
+            hits = CASE WHEN throttle.reset_at < :t THEN 1 ELSE min(throttle.hits, :max) + 1 END,
+            reset_at = CASE WHEN throttle.reset_at < :t THEN :r ELSE throttle.reset_at END
+        RETURNING hits', ['k' => $key, 'r' => $t + $window, 't' => $t, 'max' => $max]);
+    return $hits <= $max;
 }
 
 /** Borra los contadores caducados. */

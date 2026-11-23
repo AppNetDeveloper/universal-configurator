@@ -16,6 +16,10 @@ function install_requirements(): array
     foreach (['pdo_sqlite' => 'la base de datos', 'mbstring' => 'el texto en UTF-8', 'sodium' => 'cifrar la contraseña SMTP', 'json' => 'la API y el MCP', 'zip' => 'las copias de seguridad y las actualizaciones'] as $ext => $why) {
         $out[] = ["Extensión $ext", extension_loaded($ext), extension_loaded($ext) ? 'Disponible' : "Falta: necesaria para $why"];
     }
+    if (extension_loaded('pdo_sqlite')) { // los límites cuentan en una sola sentencia (INSERT … RETURNING, SQLite 3.35+)
+        $v = (string) (new PDO('sqlite::memory:'))->query('SELECT sqlite_version()')->fetchColumn();
+        $out[] = ['SQLite 3.35 o superior', version_compare($v, '3.35.0', '>='), 'Versión actual: ' . $v];
+    }
     if (!is_dir(UC_DATA)) @mkdir(UC_DATA, 0770, true);
     $ok = is_dir(UC_DATA) && is_writable(UC_DATA);
     $out[] = ['Carpeta de datos escribible', $ok, $ok ? UC_DATA : 'No se puede escribir en ' . UC_DATA . ' (da permisos de escritura al usuario de PHP)'];
