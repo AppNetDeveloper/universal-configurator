@@ -13,6 +13,7 @@ require UC_ROOT . '/app/mail.php';
 require UC_ROOT . '/app/auth.php';
 require UC_ROOT . '/app/auth_providers.php';
 require UC_ROOT . '/app/catalog.php';
+require UC_ROOT . '/app/expr.php';
 require UC_ROOT . '/app/pricing.php';
 require UC_ROOT . '/app/configurations.php';
 require UC_ROOT . '/app/front.php';
