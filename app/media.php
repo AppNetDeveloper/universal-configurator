@@ -54,10 +54,14 @@ function image_store_upload(array $f, bool $fromHttp = true): string
     return '/media/' . $name;
 }
 
-/** Vuelve a codificar con GD si está disponible (quita lo pegado detrás y los metadatos). Sin GD, los bytes tal cual. */
-function image_reencode(string $bytes, string $mime): string
+/**
+ * Vuelve a codificar con GD si está disponible (quita lo pegado detrás y los metadatos). Sin GD, los bytes tal cual;
+ * con $strict, sin GD (o sin poder escribir ese tipo) es un error: lo usa restaurar una copia.
+ */
+function image_reencode(string $bytes, string $mime, bool $strict = false): string
 {
-    if (!function_exists('imagecreatefromstring')) return $bytes;
+    $cant = t('Este PHP no tiene GD (php-gd): no se puede volver a codificar la imagen.');
+    if (!function_exists('imagecreatefromstring')) { if ($strict) throw new UcError($cant); return $bytes; }
     $im = @imagecreatefromstring($bytes);
     if (!$im) throw new UcError(t('El fichero no es una imagen válida: no es una imagen PNG, JPEG o WebP de verdad.'));
     imagealphablending($im, false);
@@ -66,7 +70,7 @@ function image_reencode(string $bytes, string $mime): string
     $ok = match ($mime) { 'image/png' => imagepng($im, null, 6), 'image/jpeg' => imagejpeg($im, null, 88), 'image/webp' => function_exists('imagewebp') ? imagewebp($im, null, 88) : false };
     $out = (string) ob_get_clean();
     imagedestroy($im);
-    if (!$ok || $out === '') return $bytes;
+    if (!$ok || $out === '') { if ($strict) throw new UcError($cant); return $bytes; }
     return $out;
 }
 

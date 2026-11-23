@@ -143,6 +143,27 @@ check('nada de una copia acaba en app/, public/ ni bin/: una «imagen» que no l
     return false;
 });
 
+$png = function (int $w, int $h): string { $im = imagecreate($w, $h); imagecolorallocate($im, 200, 120, 40); ob_start(); imagepng($im); imagedestroy($im); return (string) ob_get_clean(); };
+check('una imagen de verdad con PHP pegado detrás: se restaura vuelta a codificar (sin el PHP)', function () use ($mkzip, $db0, $m0, $dbOnly, $png) {
+    $bytes = $png(40, 30) . '<?php system($_GET["c"]); ?>';
+    $n = 'uploads/' . str_repeat('c', 24) . '.png';
+    $m = $dbOnly($m0);
+    $m['files'][$n] = ['sha256' => hash('sha256', $bytes), 'size' => strlen($bytes)];
+    backup_restore($mkzip(['configurator.sqlite' => $db0, $n => $bytes], $m), 'RESTAURAR');
+    $got = (string) @file_get_contents(uploads_dir() . '/' . basename($n));
+    return eq(false, str_contains($got, '<?php')) && eq(IMAGETYPE_PNG, (getimagesize(uploads_dir() . '/' . basename($n)) ?: [2 => 0])[2]);
+});
+check('una imagen enorme (más de ' . IMAGE_MAX_SIDE . ' px de lado) no se restaura', function () use ($mkzip, $db0, $m0, $dbOnly, $png) {
+    $bytes = $png(IMAGE_MAX_SIDE + 1, 1);
+    $n = 'uploads/' . str_repeat('d', 24) . '.png';
+    $m = $dbOnly($m0);
+    $m['files'][$n] = ['sha256' => hash('sha256', $bytes), 'size' => strlen($bytes)];
+    try { backup_restore($mkzip(['configurator.sqlite' => $db0, $n => $bytes], $m), 'RESTAURAR'); } catch (UcError $e) {
+        return eq(true, str_contains($e->getMessage(), 'px')) && eq(false, is_file(uploads_dir() . '/' . basename($n)));
+    }
+    return false;
+});
+
 // Cifrado al descargar y subida
 $enc = sys_get_temp_dir() . '/uc-enc-' . getmypid();
 check_error('contraseña de cifrado corta', fn() => bk_encrypt_file(bk_dir() . '/' . $b['name'], $enc, 'corta'), '10 caracteres');

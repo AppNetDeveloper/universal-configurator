@@ -267,12 +267,24 @@ function bk_validate_extract(string $zipFile, string $work): array
             if (!hash_equals((string) ($m['files'][$rel]['sha256'] ?? ''), hash_final($ctx))) {
                 throw new UcError(t('La huella (sha256) de «{n}» no coincide: la copia está dañada o la han cambiado. No se ha cambiado nada.', ['n' => $rel]));
             }
-            // Las imágenes, con su extensión y su contenido comprobados (van a data/uploads, nunca a app/, public/ ni bin/).
+            // Las imágenes, con su extensión y su contenido comprobados (van a data/uploads, nunca a app/, public/ ni bin/),
+            // de un tamaño razonable y VUELTAS A CODIFICAR con GD, como la subida del panel (fuera lo pegado detrás).
             if (str_starts_with($rel, 'uploads/')) {
                 $ext = pathinfo($rel, PATHINFO_EXTENSION);
                 $info = @getimagesize($dest);
                 $want = ['png' => IMAGETYPE_PNG, 'jpg' => IMAGETYPE_JPEG, 'webp' => IMAGETYPE_WEBP][$ext];
                 if (!$info || $info[2] !== $want) throw new UcError(t('«{n}» no es una imagen {e} de verdad: la copia no se restaura. No se ha cambiado nada.', ['n' => $rel, 'e' => strtoupper($ext)]));
+                if ($info[0] < 1 || $info[1] < 1 || $info[0] > IMAGE_MAX_SIDE || $info[1] > IMAGE_MAX_SIDE || $size > IMAGE_MAX_BYTES) {
+                    throw new UcError(t('«{n}» mide {w}×{h} px o pesa demasiado (como mucho {m} px por lado y 2 MB): la copia no se restaura. No se ha cambiado nada.',
+                        ['n' => $rel, 'w' => $info[0], 'h' => $info[1], 'm' => IMAGE_MAX_SIDE]));
+                }
+                $mime = array_search($ext, IMAGE_TYPES, true);
+                try {
+                    $clean = image_reencode((string) file_get_contents($dest), (string) $mime, true);
+                } catch (UcError $e) {
+                    throw new UcError(t('No se puede comprobar «{n}»: {e} La copia no se restaura (instala php-gd). No se ha cambiado nada.', ['n' => $rel, 'e' => $e->getMessage()]));
+                }
+                file_put_contents($dest, $clean);
             }
         }
     } finally {
