@@ -40,7 +40,7 @@ file_put_contents(UC_DATA . '/config.php', "<?php return ['secret' => 'x'];");
 ensure_schema();
 
 $cols = fn(string $t) => array_column(rows("PRAGMA table_info($t)"), 'name');
-check('versión de esquema al día (4)', fn() => eq('4', val("SELECT value FROM meta WHERE key = 'schema_version'")));
+check('versión de esquema al día (5)', fn() => eq('5', val("SELECT value FROM meta WHERE key = 'schema_version'")));
 check('tramos en mm (30–40 cm → 300–400 mm), sin columnas en cm', fn() => eq([[300, 400], [410, 600], [300, 600]], array_map(fn($r) => [(int) $r['from_mm'], (int) $r['to_mm']], rows('SELECT * FROM price_tiers ORDER BY id')))
     && eq(false, in_array('from_cm', $cols('price_tiers'), true)));
 check('el CHECK desde ≤ hasta sigue valiendo en mm', function () {
@@ -66,6 +66,12 @@ check('la configuración aceptada se lee igual que antes (precio congelado)', fu
 check('el borrador recalcula con los tramos en mm', function () {
     $v = config_get('UC-BBBBBBBB', ['kind' => 'user', 'user' => user_by_id(1)]);
     return eq(7500, $v['total_cents']) && eq(45, $v['walls'][0]['items'][0]['width_cm']);
+});
+check('una base en esquema 4 (sin login_backoff) recibe la tabla al actualizar', function () {
+    q('DROP TABLE login_backoff');
+    q("UPDATE meta SET value = '4' WHERE key = 'schema_version'");
+    ensure_schema();
+    return eq('login_backoff', val("SELECT name FROM sqlite_master WHERE name = 'login_backoff'"));
 });
 check('migrar dos veces no cambia nada', function () {
     migrate();

@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 
 const UC_VERSION = '0.1.0';
-const UC_SCHEMA = 4;
+const UC_SCHEMA = 5;
 const UC_AUTHOR_URL = 'https://www.bionicadri.com';
 
 /** Crédito de autoría (lo exige la Licencia BionicAdri: no se debe eliminar). */
