@@ -256,6 +256,7 @@ function mcp_call(string $name, array $args): array
             if (!isset($args[$req]) || $args[$req] === '') throw new UcError(t("Falta el parámetro obligatorio '{p}'.", ['p' => $req]));
         }
         $result = ($tool['handler'])($args);
+        if ($tool['scope'] === 'read') audit("mcp.$name", mb_substr(json_enc(array_intersect_key($args, ['code' => 1, 'node_id' => 1, 'status' => 1, 'q' => 1, 'from' => 1, 'to' => 1])), 0, 200)); // las escrituras ya dejan su propia línea
         return ['content' => [['type' => 'text', 'text' => json_enc($result, true)]], 'structuredContent' => (object) $result, 'isError' => false];
     } catch (UcError $ex) {
         $txt = 'Error: ' . $ex->getMessage();

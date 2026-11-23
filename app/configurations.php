@@ -170,7 +170,7 @@ function config_view(array $cfg): array
                 'id' => (int) $it['id'], 'module_type_id' => $it['module_type_id'], 'type_name' => $it['type_name'], 'ref' => $type['ref'] ?? '',
                 'family' => $it['family'], 'depth_mm' => isset($type['depth_mm']) ? (int) $type['depth_mm'] : null, 'width_cm' => $it['width_cm'],
                 'valid' => $it['valid'], 'tier_from_cm' => $it['tier_from_cm'], 'tier_to_cm' => $it['tier_to_cm'],
-                'price' => eur($it['price']), 'price_cents' => $it['price'],
+                'price' => eur($it['price']), 'price_cents' => $it['price'], 'price_text' => money($it['price']),
                 'tiers' => tiers_public($it['tiers']), 'error' => $it['error'] ?? null,
             ];
         }
@@ -184,7 +184,7 @@ function config_view(array $cfg): array
         'customer' => ['name' => $cfg['customer_name'], 'email' => $cfg['customer_email'], 'phone' => $cfg['customer_phone']],
         'notes' => $cfg['notes'], 'walls' => $walls, 'count' => $p['count'], 'valid' => $p['valid'], 'invalid_count' => $p['invalid_count'],
         'currency' => 'EUR', 'prices_include_tax' => false,
-        'total' => eur($p['total']), 'total_cents' => $p['total'], 'tax_rate' => $p['tax_rate'],
+        'total' => eur($p['total']), 'total_cents' => $p['total'], 'total_text' => money($p['total']), 'tax_rate' => $p['tax_rate'],
         'tax' => eur($p['tax']), 'tax_cents' => $p['tax'], 'total_with_tax' => eur($p['total_with_tax']), 'total_with_tax_cents' => $p['total_with_tax'],
         'created_at' => $cfg['created_at'], 'updated_at' => $cfg['updated_at'], 'accepted_at' => $cfg['accepted_at'],
     ];

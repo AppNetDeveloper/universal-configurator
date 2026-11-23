@@ -49,7 +49,7 @@ function tiers_error_text(string $typeName, int $width, array $tiers): string
 /** Tramos en formato público (API/MCP): euros con 2 decimales y céntimos. */
 function tiers_public(array $tiers): array
 {
-    return array_map(fn($t) => ['from_cm' => $t['from_cm'], 'to_cm' => $t['to_cm'], 'price' => eur($t['price']), 'price_cents' => $t['price']], $tiers);
+    return array_map(fn($t) => ['from_cm' => $t['from_cm'], 'to_cm' => $t['to_cm'], 'price' => eur($t['price']), 'price_cents' => $t['price'], 'price_text' => money($t['price'])], $tiers);
 }
 
 /**
