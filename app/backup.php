@@ -304,8 +304,9 @@ function bk_validate_extract(string $zipFile, string $work): array
                 $info = @getimagesize($dest);
                 $want = ['png' => IMAGETYPE_PNG, 'jpg' => IMAGETYPE_JPEG, 'webp' => IMAGETYPE_WEBP][$ext];
                 if (!$info || $info[2] !== $want) throw new UcError(t('«{n}» no es una imagen {e} de verdad: la copia no se restaura. No se ha cambiado nada.', ['n' => $rel, 'e' => strtoupper($ext)]));
-                if ($info[0] < 1 || $info[1] < 1 || $info[0] > IMAGE_MAX_SIDE || $info[1] > IMAGE_MAX_SIDE || $size > IMAGE_MAX_BYTES) {
-                    throw new UcError(t('«{n}» mide {w}×{h} px o pesa demasiado (como mucho {m} px por lado y 2 MB): la copia no se restaura. No se ha cambiado nada.',
+                // Solo el tope de píxeles (lo que cuesta decodificarla): una imagen subida puede pasar de 2 MB al volver a codificarla.
+                if ($info[0] < 1 || $info[1] < 1 || $info[0] > IMAGE_MAX_SIDE || $info[1] > IMAGE_MAX_SIDE) {
+                    throw new UcError(t('«{n}» mide {w}×{h} px (como mucho {m} px por lado): la copia no se restaura. No se ha cambiado nada.',
                         ['n' => $rel, 'w' => $info[0], 'h' => $info[1], 'm' => IMAGE_MAX_SIDE]));
                 }
                 $mime = array_search($ext, IMAGE_TYPES, true);

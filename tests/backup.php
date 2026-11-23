@@ -210,6 +210,21 @@ check('las copias con el nombre de antes (sin el trozo aleatorio) se siguen list
     return $ok;
 });
 
+check('una imagen subida que al volver a codificarla pasa de 2 MB se sigue restaurando (la copia es de la propia app)', function () {
+    $im = imagecreatetruecolor(2400, 2400);
+    mt_srand(7);
+    for ($y = 0; $y < 2400; $y += 2) for ($x = 0; $x < 2400; $x += 2) imagefilledrectangle($im, $x, $y, $x + 1, $y + 1, mt_rand(0, 0xFFFFFF));
+    $f = tempnam(sys_get_temp_dir(), 'ucj');
+    imagejpeg($im, $f, 10);
+    $url = image_store_upload(['error' => UPLOAD_ERR_OK, 'tmp_name' => $f, 'name' => 'ruido.jpg'], false);
+    @unlink($f);
+    $stored = uploads_dir() . '/' . basename($url);
+    if (filesize($stored) <= IMAGE_MAX_BYTES) throw new RuntimeException('la imagen de prueba no pasa de 2 MB guardada: ' . filesize($stored));
+    $bk = backup_create();
+    backup_restore($bk['name'], 'RESTAURAR');
+    return eq(true, is_file($stored));
+});
+
 // Cifrado al descargar y subida
 $enc = sys_get_temp_dir() . '/uc-enc-' . getmypid();
 check_error('contraseña de cifrado corta', fn() => bk_encrypt_file(bk_dir() . '/' . $b['name'], $enc, 'corta'), '10 caracteres');
