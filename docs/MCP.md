@@ -75,6 +75,9 @@ el estado de venta (y no cambia `updated_at`). Cada cambio queda en **Panel → 
 
 Todo lo demás solo lee. Cada llamada queda en **Panel → Actividad**.
 
+Límites por persona (de sobra para trabajar): `config_update` como mucho 600 llamadas cada 10 minutos y `config_share`
+60 por hora. Si se pasan, la respuesta es un error 429 que dice cuánto esperar y no se ha hecho nada.
+
 ## Reglas de precio y de medida
 
 - **Tramos:** cada tipo tiene tramos `[desde, hasta]` en cm, con los dos bordes incluidos y un precio fijo por tramo;
@@ -288,7 +291,8 @@ Respuesta real (`note`):
 
 **Cuándo:** para mandar una configuración al cliente. **Devuelve:** `url` (solo lectura, firmada, caduca en 30 días,
 sin datos personales ni en la URL ni en la página; se construye con la dirección pública de la instalación),
-`expires_at`, `days` y `whatsapp_url` (con el texto listo). Una anulada no se comparte y su enlace deja de abrir.
+`expires_at`, `days` y `whatsapp_url` (con el texto listo). Compartir otra vez el mismo día da el mismo enlace (caduca
+al final del día 30). Una anulada no se comparte y su enlace deja de abrir.
 
 ### `config_mark` (write)
 

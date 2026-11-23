@@ -63,4 +63,40 @@ SwapStream::$bodies = [$evil, $evil];
 SwapStream::$opens = 0;
 check_error('un paquete que no coincide con su sha256 firmado no deja copia', function () use ($m) { update_package_private('swap://paquete.zip', $m); }, 'sha256');
 
+// --- Compartir y cambiar: con límite por persona (o por conexión, el invitado), y compartir lo mismo no repite la fila
+settings_save(['url_publica' => 'https://conf.test']);
+$c = fx_catalog();
+$ana = fx_user('comercial', 'ana@x.test');
+$va = ['kind' => 'user', 'user' => $ana];
+$cfg = config_create($c['blanco'], $va);
+$shares = fn(string $code) => (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'config.share' AND detail LIKE ?", [$code . '%']);
+check('compartir dos veces lo mismo: el mismo enlace y una sola fila en la actividad', function () use ($cfg, $va, $shares) {
+    $a = config_share($cfg['code'], $va);
+    $b = config_share($cfg['code'], $va);
+    return eq($a['url'], $b['url']) && eq(1, $shares($cfg['code']));
+});
+check('compartir sin parar: a partir de ' . SHARE_MAX_PER_HOUR . ' por hora, 429', function () use ($c, $va) {
+    $codes = [];
+    for ($i = 0; $i < 3; $i++) $codes[] = config_create($c['blanco'], $va)['code'];
+    $ok = 0; $last = null;
+    for ($i = 0; $i < 300; $i++) { try { config_share($codes[$i % 3], $va); $ok++; } catch (UcError $e) { $last = $e->status; } }
+    return eq(true, $ok <= SHARE_MAX_PER_HOUR) && eq(429, $last) && eq(true, (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'config.share'") <= 4);
+});
+check('cambiar una configuración sin parar: a partir de ' . CONFIG_OPS_PER_WINDOW . ' llamadas en la ventana, 429 (y la actividad no crece más)', function () use ($c, $va) {
+    $code = config_create($c['blanco'], $va)['code'];
+    $item = (int) val('SELECT i.id FROM config_items i JOIN config_walls w ON w.id = i.config_wall_id JOIN configurations c ON c.id = w.configuration_id WHERE c.code = ? ORDER BY i.id LIMIT 1', [$code]);
+    $before = (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'config.update'");
+    $ok = 0; $last = null;
+    for ($i = 0; $i < CONFIG_OPS_PER_WINDOW + 20; $i++) {
+        try { config_apply_ops($code, [['op' => 'set_width', 'item_id' => $item, 'width_cm' => 40]], $va); $ok++; } catch (UcError $e) { $last = $e->status; }
+    }
+    return eq(CONFIG_OPS_PER_WINDOW, $ok) && eq(429, $last) && eq(CONFIG_OPS_PER_WINDOW, (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'config.update'") - $before);
+});
+check('el límite es de cada uno: otra persona sigue pudiendo cambiar las suyas', function () use ($c) {
+    $vb = ['kind' => 'user', 'user' => fx_user('comercial', 'beto@x.test')];
+    $code = config_create($c['blanco'], $vb)['code'];
+    $item = (int) val('SELECT i.id FROM config_items i JOIN config_walls w ON w.id = i.config_wall_id JOIN configurations c ON c.id = w.configuration_id WHERE c.code = ? ORDER BY i.id LIMIT 1', [$code]);
+    return is_array(config_apply_ops($code, [['op' => 'set_width', 'item_id' => $item, 'width_cm' => 40]], $vb));
+});
+
 done();

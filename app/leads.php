@@ -15,6 +15,7 @@ const LEAD_STATUSES = ['nuevo' => 'Nuevo', 'contactado' => 'Contactado', 'cerrad
 const WORK_STATUSES = ['nuevo' => 'Nuevo', 'en_curso' => 'En curso', 'hecho' => 'Hecho'];
 const WORK_NOTE_MAX = 200;
 const SHARE_TTL_DAYS = 30;
+const SHARE_MAX_PER_HOUR = 60;   // enlaces compartidos por persona (o conexión del invitado) y hora
 const LEAD_MAX_PER_IP_HOUR = 5;     // peticiones de presupuesto por conexión y hora
 const SAVE_MAIL_MAX_PER_DEST_DAY = 3; // correos «guárdala» a una misma dirección al día
 
@@ -136,9 +137,15 @@ function config_share(string $code, ?array $viewer): array
 {
     $cfg = config_find($code, $viewer);
     if ($cfg['status'] === 'cancelled') throw new UcError(t('La configuración {c} está anulada: no se comparte.', ['c' => $cfg['code']]), [], 409);
-    $exp = time() + SHARE_TTL_DAYS * 86400;
-    $url = require_public_url() . share_path($cfg['code'], $exp);
-    audit('config.share', $cfg['code']);
+    $url0 = require_public_url();
+    if (!throttle('share:' . viewer_rate_key($viewer), SHARE_MAX_PER_HOUR, 3600)) {
+        throw new UcError(t('Has compartido muchas veces seguidas. Espera un rato.'), [], 429);
+    }
+    // El enlace de hoy caduca al final del día dentro de 30 días: compartir lo mismo otra vez da el mismo enlace…
+    $exp = (intdiv(time(), 86400) + SHARE_TTL_DAYS + 1) * 86400;
+    $url = $url0 . share_path($cfg['code'], $exp);
+    // …y una sola fila en la actividad.
+    if (throttle('share-audit:' . $cfg['code'] . ':' . $exp, 1, 2 * 86400)) audit('config.share', $cfg['code']);
     return ['code' => $cfg['code'], 'url' => $url, 'expires_at' => date('c', $exp), 'days' => SHARE_TTL_DAYS,
         'whatsapp_url' => 'https://wa.me/?text=' . rawurlencode(t('Mi configuración en {e}: {u}', ['e' => setting('empresa'), 'u' => $url]))];
 }

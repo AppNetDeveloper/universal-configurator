@@ -21,6 +21,8 @@ const CONFIG_STATUSES_CLIENT = ['draft' => 'Sin enviar', 'requested' => 'Presupu
 const ACCEPT_ROLES = ['admin', 'comercial'];
 const CONFIG_OPS = ['set_width', 'remove', 'add', 'replace', 'customer'];
 const CONFIG_MAX_OPS = 100;      // operaciones por petición
+const CONFIG_OPS_PER_WINDOW = 600; // llamadas que cambian configuraciones, por persona (o conexión del invitado)…
+const CONFIG_OPS_WINDOW = 600;     // …cada 10 minutos
 const CONFIG_MAX_LINES = 300;    // líneas (módulos) por configuración
 
 function config_code_new(): string
@@ -63,6 +65,20 @@ function viewer_label(?array $viewer): string
 {
     if (!$viewer) return 'nadie';
     return $viewer['kind'] === 'user' ? $viewer['user']['email'] : 'invitado';
+}
+
+/** Para los límites: la persona por su cuenta (web, API o MCP), el invitado por su conexión (una sesión nueva no lo salta). */
+function viewer_rate_key(?array $viewer): string
+{
+    return ($viewer['kind'] ?? '') === 'user' ? 'u' . (int) $viewer['user']['id'] : 'ip:' . client_ip_key();
+}
+
+/** Cambios (y deshacer) por persona o conexión: de sobra para trabajar, pero la actividad no crece sin límite. */
+function config_ops_limit(?array $viewer): void
+{
+    if (!throttle('ops:' . viewer_rate_key($viewer), CONFIG_OPS_PER_WINDOW, CONFIG_OPS_WINDOW)) {
+        throw new UcError(t('Demasiados cambios seguidos: espera un par de minutos. No se ha hecho nada.'), [], 429);
+    }
 }
 
 // ---------------------------------------------------------------- crear y duplicar
@@ -413,6 +429,7 @@ function config_apply_ops(string $code, array $ops, ?array $viewer): array
 {
     $cfg = config_find($code, $viewer);
     config_require_draft($cfg);
+    config_ops_limit($viewer);
     if (!$ops || !array_is_list($ops)) throw new UcError(t('ops debe ser una lista de operaciones, p. ej. [{"op": "set_width", "item_id": 12, "width_cm": 60}].'));
     // Topes ANTES de abrir la transacción: un lote enorme se rechaza al momento y no bloquea la base.
     if (count($ops) > CONFIG_MAX_OPS) {
@@ -709,6 +726,7 @@ function config_undo(string $code, array $viewer): array
 {
     $cfg = config_find($code, $viewer);
     config_require_draft($cfg);
+    config_ops_limit($viewer);
     $stack = (array) ($_SESSION['undo'][$cfg['code']] ?? []);
     $snap = array_pop($stack);
     if (!$snap) throw new UcError(t('No hay nada que deshacer.'), [], 409);
