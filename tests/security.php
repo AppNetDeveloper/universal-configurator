@@ -30,31 +30,67 @@ check('login_dummy_hash no calcula ningún hash (cada petición web es un proces
     return eq(false, str_contains($body, 'password_hash('));
 });
 
-// 3. Bloquear el login ajeno: el bloqueo es por correo+IP; por correo solo, frena (retardo) sin cerrar
-check('5 fallos desde una IP bloquean ESA IP para ese correo…', function () use ($as, $tryLogin) {
-    q('DELETE FROM throttle');
+// 3. Bloquear el login ajeno y fuerza bruta por cuenta (sin sleep: «siguiente intento permitido» y tope por cuenta)
+$GLOBALS['uc_clock_skew'] = 0.0;
+$advance = function (float $s) { $GLOBALS['uc_clock_skew'] += $s; };
+check('tras un fallo, el siguiente intento a esa cuenta antes de tiempo: 429 al momento, sin dormir', function () use ($as, $tryLogin) {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     $as('10.0.0.1');
-    for ($i = 0; $i < 5; $i++) $tryLogin('ana@x.test', 'mala');
+    $tryLogin('ana@x.test', 'mala');
+    $t = hrtime(true);
+    $r = $tryLogin('ana@x.test', 'clave-de-ana');
+    $ms = (hrtime(true) - $t) / 1e6;
+    return eq(429, $r) && eq(true, $ms < 300, sprintf('tardó %.0f ms', $ms));
+});
+check('la espera es progresiva (1, 2, 4… s) con tope de 60 s', function () use ($as, $tryLogin, $advance) {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    $waits = [];
+    for ($i = 0; $i < 8; $i++) {
+        $as('10.9.' . $i . '.1');
+        $tryLogin('ana@x.test', 'mala');
+        $waits[] = (int) round((float) val('SELECT next_at FROM login_backoff') - clock());
+        $advance(61);
+    }
+    return eq([1, 2, 4, 8, 16, 32, 60, 60], $waits);
+});
+check('pasada la espera, la dueña entra (desde otra IP)', function () use ($as, $tryLogin, $advance) {
+    $advance(61);
+    $as('10.0.0.2');
+    return eq('ok', $tryLogin('ana@x.test', 'clave-de-ana'));
+});
+check('5 fallos desde una IP bloquean ESA IP para ese correo', function () use ($as, $tryLogin, $advance) {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    $as('10.0.0.1');
+    for ($i = 0; $i < 5; $i++) { $tryLogin('ana@x.test', 'mala'); $advance(61); }
     return eq(429, $tryLogin('ana@x.test', 'clave-de-ana'));
 });
-check('…pero la dueña entra desde su IP', function () use ($as, $tryLogin) { $as('10.0.0.2'); return eq('ok', $tryLogin('ana@x.test', 'clave-de-ana')); });
-check('muchos fallos desde muchas IP: frena (retardo) pero no cierra la cuenta', function () use ($as, $tryLogin) {
-    q('DELETE FROM throttle');
-    for ($i = 0; $i < 40; $i++) { $as("10.1.0.$i"); $tryLogin('ana@x.test', 'mala'); }
-    $GLOBALS['uc_login_delay'] = 0;
-    $as('10.2.0.1');
-    $r = $tryLogin('ana@x.test', 'clave-de-ana');
-    return eq('ok', $r) && eq(true, $GLOBALS['uc_login_delay'] > 0, 'hubo retardo');
+check('tope duro por cuenta: 50 fallos en una hora desde IP distintas → 429 hasta que pase la hora', function () use ($as, $tryLogin, $advance) {
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+    for ($i = 0; $i < 50; $i++) { $as('10.5.' . intdiv($i, 200) . '.' . ($i % 200 + 1)); $tryLogin('ana@x.test', 'mala'); $advance(61); q('DELETE FROM login_backoff'); }
+    $as('10.6.0.1');
+    $blocked = $tryLogin('ana@x.test', 'clave-de-ana');
+    return eq(429, $blocked);
+});
+check('con la cuenta bloqueada, restablecer por correo sigue funcionando', function () use ($lastToken) {
+    password_reset_request('ana@x.test');
+    $u = password_reset_consume($lastToken(), 'clave-de-ana');
+    return eq('ana@x.test', $u['email']);
+});
+q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+check('IPv6: las claves de IP agrupan por /64', function () {
+    $k = function (string $ip) { $_SERVER['REMOTE_ADDR'] = $ip; return client_ip_key(); };
+    return eq($k('2001:db8:1:2::1'), $k('2001:db8:1:2:ffff:ffff:ffff:ffff')) && eq(true, $k('2001:db8:1:2::1') !== $k('2001:db8:1:3::1'))
+        && eq('10.0.0.1', $k('10.0.0.1'));
 });
 check('el registro de actividad no crece con cada intento ya bloqueado (una fila por ventana)', function () use ($as, $tryLogin) {
-    q('DELETE FROM throttle');
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     $as('10.3.0.1');
     $before = (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'user.login_throttled'");
     for ($i = 0; $i < 30; $i++) $tryLogin('ana@x.test', 'mala');
     return eq($before + 1, (int) val("SELECT COUNT(*) FROM audit_log WHERE action = 'user.login_throttled'"));
 });
 $as('127.0.0.1');
-q('DELETE FROM throttle');
+q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
 
 // 4. Cambiar la contraseña (o desactivar) cierra las demás sesiones
 check('restablecer la contraseña cierra las sesiones abiertas', function () use ($lastToken) {
@@ -90,20 +126,43 @@ check('la sesión propia sigue viva tras restablecer', function () use ($lastTok
 
 // 5. Registro con verificación del correo y sin delatar cuentas
 settings_save(['permitir_registro' => '1']);
-check('registrarse con un correo que ya existe da el mismo mensaje y no envía nada', function () use ($mailLog) {
+check('registrarse con un correo que ya existe: mismo mensaje y al dueño le llega un aviso con enlace de RESTABLECER', function () use ($mailLog) {
     $before = strlen($mailLog());
     $msg = register_user('Otra', 'ana@x.test');
-    return eq(REGISTER_MESSAGE, $msg) && eq($before, strlen($mailLog()));
+    $new = substr($mailLog(), $before);
+    return eq(REGISTER_MESSAGE, $msg) && eq(true, str_contains($new, 'Para: ana@x.test') && str_contains($new, 'Alguien ha intentado registrarse') && str_contains($new, '/restablecer?token='))
+        && eq(false, str_contains($new, 'Otra'));
+});
+check('el registro tarda lo mismo exista o no el correo (los dos caminos envían un correo; mínimo 300 ms)', function () {
+    q('DELETE FROM throttle');
+    $t = function (string $email) { $s = hrtime(true); register_user('X', $email); return (hrtime(true) - $s) / 1e6; };
+    $a = [$t('ana@x.test'), $t('admin@x.test')];
+    $b = [$t('nuevo1@x.test'), $t('nuevo2@x.test')];
+    $avgA = array_sum($a) / 2; $avgB = array_sum($b) / 2;
+    fwrite(STDOUT, sprintf("     (registro: correo existente %.0f ms, nuevo %.0f ms)\n", $avgA, $avgB));
+    q('DELETE FROM throttle');
+    return eq(true, min([...$a, ...$b]) >= 300, 'mínimo 300 ms') && eq(true, abs($avgA - $avgB) < 0.35 * max($avgA, $avgB), sprintf('existe %.0f ms, nuevo %.0f ms', $avgA, $avgB));
+});
+check('el correo de activación (correo sin verificar) no lleva el nombre ni texto libre', function () use ($mailLog) {
+    $before = strlen($mailLog());
+    register_user("Gana 1000€ en http://malo.example y www.otro.example\nURGENTE", 'victima@x.test');
+    $new = substr($mailLog(), $before);
+    return eq(true, str_contains($new, 'Hola:') && str_contains($new, setting('empresa'))) && eq(false, str_contains($new, 'malo') || str_contains($new, 'Gana') || str_contains($new, 'URGENTE'));
+});
+check('nombre en un correo: una línea, sin URL ni dominios, como mucho 60 caracteres', function () {
+    $n = mail_name("Ana\nVisita https://malo.example/x www.otro.example o banco.example.com ya " . str_repeat('x', 100));
+    return eq(false, str_contains($n, "\n") || str_contains($n, 'http') || str_contains($n, 'www.') || str_contains($n, '.example')) && eq(true, mb_strlen($n) <= 60) && eq(true, str_starts_with($n, 'Ana'));
 });
 check('registro nuevo: la cuenta no entra hasta verificar el correo', function () use ($tryLogin) {
     $msg = register_user('Eva', 'eva@x.test');
     $u = user_by_email('eva@x.test');
     return eq(REGISTER_MESSAGE, $msg) && eq(0, (int) $u['active']) && eq(1, (int) $u['pending_verification']) && eq(null, $u['password_hash'])
         && eq(true, $tryLogin('eva@x.test', '') !== 'ok') && eq(null, session_viewer());
+    q('DELETE FROM login_backoff');
 });
 check('con el enlace del correo pone su contraseña y la cuenta se activa', function () use ($lastToken, $tryLogin) {
     password_reset_consume($lastToken(), 'clave-de-eva');
-    q('DELETE FROM throttle');
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     $u = user_by_email('eva@x.test');
     return eq(1, (int) $u['active']) && eq(0, (int) $u['pending_verification']) && eq('ok', $tryLogin('eva@x.test', 'clave-de-eva'));
 });

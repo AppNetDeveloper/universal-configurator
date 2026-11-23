@@ -202,6 +202,7 @@ function migrate(): void
     CREATE TABLE IF NOT EXISTS audit_log (
         id INTEGER PRIMARY KEY, at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS throttle (key TEXT PRIMARY KEY, hits INTEGER NOT NULL, reset_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS login_backoff (key TEXT PRIMARY KEY, fails INTEGER NOT NULL, next_at REAL NOT NULL, last_fail_at REAL NOT NULL);
     SQL);
     // v3: medidas en mm (un decimal en cm = mm enteros), medidas del tipo y despiece.
     migrate_v3();
@@ -448,6 +449,24 @@ function is_https(): bool
 function client_ip(): string
 {
     return (string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+}
+
+/**
+ * IP para los límites de intentos: la IPv4 tal cual; una IPv6 agrupada por su /64 (quien tiene una /64 tiene
+ * millones de direcciones y, si no, saltaría los límites cambiando de dirección).
+ */
+function client_ip_key(): string
+{
+    $ip = client_ip();
+    $bin = @inet_pton($ip);
+    if ($bin === false || strlen($bin) !== 16) return $ip;
+    return inet_ntop(substr($bin, 0, 8) . str_repeat("\0", 8)) . '/64';
+}
+
+/** Reloj en segundos con decimales (las pruebas lo pueden adelantar). */
+function clock(): float
+{
+    return microtime(true) + (defined('UC_TESTING') ? (float) ($GLOBALS['uc_clock_skew'] ?? 0) : 0.0);
 }
 
 function base_url(): string

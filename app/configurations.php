@@ -105,7 +105,7 @@ function config_create(int $nodeId, ?array $viewer, array $customer = []): array
 /** Invitado: como mucho 30 configuraciones nuevas (crear o duplicar) por hora y conexión. */
 function guest_create_limit(array $viewer): void
 {
-    if ($viewer['kind'] === 'guest' && !throttle('guest-create:' . client_ip(), 30, 3600)) throw new UcError(t('Demasiadas configuraciones nuevas desde esta conexión. Prueba dentro de un rato.'), [], 429);
+    if ($viewer['kind'] === 'guest' && !throttle('guest-create:' . client_ip_key(), 30, 3600)) throw new UcError(t('Demasiadas configuraciones nuevas desde esta conexión. Prueba dentro de un rato.'), [], 429);
 }
 
 /** Datos del cliente (name, email, phone, notes) → columnas. Una clave que no existe es un error. */

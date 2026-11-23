@@ -28,9 +28,9 @@ check('5 fallos por correo bloquean aunque luego acierte (throttle)', function (
     throw new RuntimeException('no bloqueó');
 });
 check('el límite por IP también existe (20 intentos)', function () {
-    q('DELETE FROM throttle');
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     for ($i = 0; $i < 20; $i++) { try { login_attempt("otro$i@x.test", 'mala'); } catch (UcError) {} }
-    try { login_attempt('admin@x.test', 'secreta123'); } catch (UcError $e) { q('DELETE FROM throttle'); return eq(429, $e->status); }
+    try { login_attempt('admin@x.test', 'secreta123'); } catch (UcError $e) { q('DELETE FROM throttle'); q('DELETE FROM login_backoff'); return eq(429, $e->status); }
     throw new RuntimeException('no bloqueó por IP');
 });
 check_error('una cuenta desactivada no entra', function () use ($ana) {
@@ -38,6 +38,7 @@ check_error('una cuenta desactivada no entra', function () use ($ana) {
     try { login_attempt('ana@x.test', 'clave-de-ana'); } finally { update('users', ['active' => 1], 'id = ?', [$ana['id']]); }
 }, 'incorrectos');
 check('desactivar a alguien con sesión le cierra la sesión', function () use ($ana) {
+    q('DELETE FROM login_backoff');
     login_attempt('ana@x.test', 'clave-de-ana');
     update('users', ['active' => 0], 'id = ?', [$ana['id']]);
     $r = current_user();
@@ -93,7 +94,7 @@ check('olvido: envía un enlace y con él se pone la contraseña nueva (una sola
     $u = password_reset_consume($tok, 'nueva-clave-1');
     $reuse = false;
     try { password_reset_consume($tok, 'otra-clave-2'); } catch (UcError) { $reuse = true; }
-    q('DELETE FROM throttle');
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     return eq('ana@x.test', $u['email']) && eq(true, $reuse, 'el enlace no se reutiliza') && eq('ana@x.test', login_attempt('ana@x.test', 'nueva-clave-1')['email']);
 });
 session_logout();
@@ -108,7 +109,7 @@ check_error('enlace caducado (más de 1 hora) no vale', function () use ($lastLi
     password_reset_consume($tok, 'clave-nueva-99');
 }, 'caducado');
 check('sin url_publica y con Host: evil.example no sale ningún enlace (ni correo) y queda aviso', function () use ($mailLog) {
-    q('DELETE FROM throttle');
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     settings_save(['url_publica' => '']);
     $_SERVER['HTTP_HOST'] = 'evil.example';
     $before = $mailLog();
@@ -127,7 +128,7 @@ check_error('reset_link sin url_publica no cae a la cabecera Host', function () 
 }, 'URL pública');
 check_error('instalar sin dirección pública no instala', fn() => uc_install(['empresa' => 'X', 'admin_email' => 'z@x.test', 'admin_password' => 'secreta123', 'url' => '']), 'URL pública');
 check('el enlace del correo usa la dirección pública de Ajustes, no la cabecera Host', function () use ($lastLink, $mailLog) {
-    q('DELETE FROM throttle');
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     settings_save(['url_publica' => 'https://configurador.empresa.test']);
     $_SERVER['HTTP_HOST'] = 'atacante.test';
     password_reset_request('ana@x.test');
@@ -148,7 +149,7 @@ check('alta de comercial: sin contraseña hasta que abre su enlace', function ()
     try { login_attempt('carla@x.test', ''); } catch (UcError) { $noLogin = true; }
     $tok = $lastLink();
     password_reset_consume($tok, 'clave-de-carla');
-    q('DELETE FROM throttle');
+    q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
     $ok = login_attempt('carla@x.test', 'clave-de-carla');
     session_logout();
     return eq(true, $sent) && eq(true, str_contains($link, $tok)) && eq(true, $noLogin) && eq('comercial', $ok['role'])

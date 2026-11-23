@@ -338,7 +338,7 @@ function mcp_process(?string $authorization, string $raw): array
     $secret = preg_match('/^Bearer\s+(\S+)$/i', (string) $authorization, $m) ? $m[1] : '';
     $token = $secret !== '' ? token_authenticate($secret) : null;
     if (!$token) {
-        if (!throttle('mcp-fail:' . client_ip(), 20, 900)) return [429, ['error' => 'Demasiados intentos']];
+        if (!throttle('mcp-fail:' . client_ip_key(), 20, 900)) return [429, ['error' => 'Demasiados intentos']];
         return [401, ['error' => 'Token MCP no válido o revocado. Créalo en el panel: Tokens MCP.']];
     }
     McpContext::$token = $token;
