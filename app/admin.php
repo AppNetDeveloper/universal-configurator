@@ -225,7 +225,7 @@ function admin_handle(string $path, string $method): void
         $viewer = ['kind' => 'user', 'user' => $u];
         $filters = array_intersect_key($_GET, ['status' => 1, 'from' => 1, 'to' => 1, 'q' => 1, 'user_id' => 1, 'work_status' => 1, 'pendientes' => 1]);
         if ($path === '/configuraciones' && !$post) {
-            try { $list = config_list($viewer, $filters, max(1, (int) ($_GET['page'] ?? 1)), 25); }
+            try { $list = config_list($viewer, $filters, page_clamp((int) ($_GET['page'] ?? 1)), 25); }
             catch (UcError $ex) { flash($ex->getMessage(), 'error'); $filters = []; $list = config_list($viewer, [], 1, 25); }
             admin_render('configs', '/configuraciones', ['title' => t('Configuraciones'), 'list' => $list, 'filters' => $filters,
                 'users' => rows("SELECT id, name FROM users WHERE role != 'cliente' OR id IN (SELECT DISTINCT user_id FROM configurations) ORDER BY name")]);
@@ -275,7 +275,7 @@ function admin_handle(string $path, string $method): void
         // ---- leads (lo que deja el cliente final con «Quiero este presupuesto»)
         if ($path === '/leads' && !$post) {
             $lf = array_intersect_key($_GET, ['estado' => 1, 'work_status' => 1, 'q' => 1]);
-            try { $leads = lead_list($viewer, $lf, max(1, (int) ($_GET['page'] ?? 1)), 25); }
+            try { $leads = lead_list($viewer, $lf, page_clamp((int) ($_GET['page'] ?? 1)), 25); }
             catch (UcError $ex) { flash($ex->getMessage(), 'error'); $lf = []; $leads = lead_list($viewer, [], 1, 25); }
             admin_render('leads', '/leads', ['title' => t('Leads'), 'leads' => $leads, 'filters' => $lf]);
             return;
@@ -440,7 +440,7 @@ function admin_handle(string $path, string $method): void
 
         // ---- actividad
         if ($path === '/actividad' && !$post) {
-            $page = max(1, (int) ($_GET['page'] ?? 1));
+            $page = page_clamp((int) ($_GET['page'] ?? 1));
             $total = (int) val('SELECT COUNT(*) FROM audit_log');
             admin_render('activity', '/actividad', ['title' => t('Actividad'), 'rows' => rows('SELECT * FROM audit_log ORDER BY id DESC LIMIT 50 OFFSET ' . (($page - 1) * 50)),
                 'page' => $page, 'pages' => max(1, (int) ceil($total / 50))]);

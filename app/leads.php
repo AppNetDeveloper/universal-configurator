@@ -221,7 +221,7 @@ function lead_list(?array $viewer, array $f, int $page = 1, int $perPage = 25): 
     $total = (int) val("SELECT COUNT(*) FROM leads l $sqlWhere", $args);
     $scope = $viewer['user']['role'] === 'admin' ? ['', []] : ['AND user_id = ?', [(int) $viewer['user']['id']]];
     $pending = (int) val("SELECT COUNT(*) FROM leads WHERE work_status IN ('nuevo','en_curso') {$scope[0]}", $scope[1]);
-    $page = max(1, $page);
+    $page = page_clamp($page);
     $rs = rows("SELECT l.* FROM leads l $sqlWhere ORDER BY CASE l.work_status WHEN 'nuevo' THEN 0 WHEN 'en_curso' THEN 1 ELSE 2 END, l.created_at DESC, l.id DESC
         LIMIT $perPage OFFSET " . (($page - 1) * $perPage), $args);
     return ['items' => array_map('lead_view', $rs), 'page' => $page, 'per_page' => $perPage, 'total' => $total, 'pages' => (int) ceil($total / $perPage), 'pending' => $pending];

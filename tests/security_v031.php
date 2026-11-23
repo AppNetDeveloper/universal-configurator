@@ -99,4 +99,12 @@ check('el límite es de cada uno: otra persona sigue pudiendo cambiar las suyas'
     return is_array(config_apply_ops($code, [['op' => 'set_width', 'item_id' => $item, 'width_cm' => 40]], $vb));
 });
 
+// --- `page` gigantesco: lista vacía, nunca un error interno
+check('config_list y lead_list con page = PHP_INT_MAX: lista vacía, sin error', function () use ($va) {
+    $admin = ['kind' => 'user', 'user' => fx_user('admin', 'jefa@x.test')];
+    $a = config_list($va, [], PHP_INT_MAX);
+    $b = lead_list($admin, [], PHP_INT_MAX);
+    return eq([], $a['items']) && eq([], $b['items']) && eq(true, $a['page'] <= PAGE_MAX);
+});
+
 done();

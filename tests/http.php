@@ -652,6 +652,19 @@ check('G: con la base bloqueada durante una actualización de esquema, 503 «act
     return eq(503, $r['status']) && eq(true, str_contains($r['body'], 'Actualizando')) && eq(false, str_contains($r['body'], '#0') || str_contains($r['body'], 'PDOException'));
 });
 
+// --- `page` gigantesco, negativo o no numérico: nunca un 500
+check('page enorme, negativo o no numérico: 200 (lista vacía o la primera), nunca 500 (API, configuraciones, leads y actividad)', function () use ($ana, $adm) {
+    foreach (['9223372036854775807', '99999999999999999999', '-5', 'abc'] as $p) {
+        $r = $ana->api('GET', '/api/configurations?page=' . urlencode($p));
+        if ($r['status'] !== 200 || !is_array($r['json']['items'] ?? null)) throw new RuntimeException("API page=$p → {$r['status']}");
+        foreach (['/admin/configuraciones', '/admin/leads', '/admin/actividad'] as $path) {
+            $st = $adm->get("$path?page=" . urlencode($p))['status'];
+            if ($st !== 200) throw new RuntimeException("$path?page=$p → $st");
+        }
+    }
+    return true;
+});
+
 // --- salir
 check('salir cierra la sesión', function () use ($ana) {
     $ana->post('/salir', ['_csrf' => Browser::csrf($ana->get('/configurar')['body'])]);

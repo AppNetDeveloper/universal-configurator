@@ -147,11 +147,11 @@ function mcp_tools(): array
             'scope' => 'read', 'inputSchema' => $obj(['status' => ['type' => 'string', 'enum' => array_keys(CONFIG_STATUSES)], 'work_status' => ['type' => 'string', 'enum' => array_keys(WORK_STATUSES)],
                 'pendientes' => ['type' => 'boolean', 'description' => 'true: solo lo aceptado con el trabajo «nuevo» o «en_curso»'],
                 'from' => $str('Desde AAAA-MM-DD'), 'to' => $str('Hasta AAAA-MM-DD'),
-                'q' => $str('Texto a buscar'), 'page' => $int('Página (1…)'), 'per_page' => $int('Por página (máx. 100, 25 por defecto)')]),
+                'q' => $str('Texto a buscar'), 'page' => $int('Página (1…' . PAGE_MAX . ')'), 'per_page' => $int('Por página (máx. 100, 25 por defecto)')]),
             'example' => ['pendientes' => true, 'per_page' => 25],
             'handler' => function (array $a) {
                 if (isset($a['pendientes']) && !is_bool($a['pendientes'])) throw new UcError(t('pendientes es true o false (sin comillas).'));
-                return config_list(mcp_viewer(), $a, isset($a['page']) ? parse_int($a['page'], 'page') : 1, isset($a['per_page']) ? parse_int($a['per_page'], 'per_page', 1, 100) : 25);
+                return config_list(mcp_viewer(), $a, isset($a['page']) ? parse_int($a['page'], 'page', 1, PAGE_MAX) : 1, isset($a['per_page']) ? parse_int($a['per_page'], 'per_page', 1, 100) : 25);
             },
         ],
         'config_get' => [
@@ -218,9 +218,9 @@ function mcp_tools(): array
         'lead_list' => [
             'description' => 'Úsala para ver los clientes que han pedido presupuesto desde el configurador («Quiero este presupuesto»): nombre, teléfono, correo, mensaje, su configuración y total, estado (nuevo, contactado, cerrado) y estado de trabajo. Los nuevos sin trabajar primero; «pending» dice cuántos hay. Un admin ve todos; un comercial, los de sus configuraciones.',
             'scope' => 'read', 'inputSchema' => $obj(['estado' => ['type' => 'string', 'enum' => array_keys(LEAD_STATUSES)], 'work_status' => ['type' => 'string', 'enum' => array_keys(WORK_STATUSES)],
-                'q' => $str('Nombre, teléfono o correo'), 'page' => $int('Página (1…)'), 'per_page' => $int('Por página (máx. 100, 25 por defecto)')]),
+                'q' => $str('Nombre, teléfono o correo'), 'page' => $int('Página (1…' . PAGE_MAX . ')'), 'per_page' => $int('Por página (máx. 100, 25 por defecto)')]),
             'example' => ['work_status' => 'nuevo'],
-            'handler' => fn(array $a) => lead_list(mcp_viewer(), $a, isset($a['page']) ? parse_int($a['page'], 'page') : 1, isset($a['per_page']) ? parse_int($a['per_page'], 'per_page', 1, 100) : 25),
+            'handler' => fn(array $a) => lead_list(mcp_viewer(), $a, isset($a['page']) ? parse_int($a['page'], 'page', 1, PAGE_MAX) : 1, isset($a['per_page']) ? parse_int($a['per_page'], 'per_page', 1, 100) : 25),
         ],
         'lead_get' => [
             'description' => 'Úsala para leer un lead entero antes de llamar o escribir al cliente: datos de contacto, mensaje, consentimiento, configuración (código y total) y estado de trabajo. Para ver los módulos, config_get con su configuration_code.',

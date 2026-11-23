@@ -10,6 +10,7 @@ declare(strict_types=1);
 const UC_VERSION = '0.3.0';
 const UC_SCHEMA = 7;
 const UC_MAX_BODY = 256 * 1024; // cuerpo máximo de una petición a /api y /mcp
+const PAGE_MAX = 100000;        // página más alta de cualquier listado (más allá, lista vacía; nunca un OFFSET desbordado)
 const UC_AUTHOR_URL = 'https://www.bionicadri.com';
 
 /** Crédito de autoría (lo exige la Licencia BionicAdri: no se debe eliminar). */
@@ -574,6 +575,12 @@ function request_header(string $name): ?string
         foreach (getallheaders() as $k => $hv) if (strcasecmp($k, $name) === 0) return $hv;
     }
     return $v;
+}
+
+/** Página de un listado entre 1 y PAGE_MAX (venga lo que venga: negativo, enorme o «abc» convertido a 0). */
+function page_clamp(int $page): int
+{
+    return max(1, min(PAGE_MAX, $page));
 }
 
 /**

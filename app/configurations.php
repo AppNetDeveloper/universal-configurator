@@ -343,7 +343,7 @@ function config_list(?array $viewer, array $f, int $page = 1, int $perPage = 25)
     $perPage = max(1, min(100, $perPage));
     $total = (int) val("SELECT COUNT(*) FROM configurations c $sqlWhere", $args);
     $pages = (int) ceil($total / $perPage);
-    $page = max(1, $page);
+    $page = page_clamp($page);
     // Las pendientes primero (nuevo, luego en curso); dentro, las más recientes.
     $order = "CASE WHEN c.status = 'accepted' AND c.work_status = 'nuevo' THEN 0 WHEN c.status = 'accepted' AND c.work_status = 'en_curso' THEN 1 ELSE 2 END, c.created_at DESC, c.id DESC";
     $rs = rows("SELECT c.* FROM configurations c $sqlWhere ORDER BY $order LIMIT $perPage OFFSET " . (($page - 1) * $perPage), $args);

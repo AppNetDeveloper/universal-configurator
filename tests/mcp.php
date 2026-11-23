@@ -253,6 +253,9 @@ check('lead_mark: trabajo y estado comercial; estado inventado = error', functio
     $d = $ok($call($tAdminRW, 'lead_mark', ['lead_id' => $req['lead_id'], 'work_status' => 'en_curso', 'estado' => 'contactado', 'work_note' => 'Llamada hecha']))['lead'];
     return eq(['contactado', 'en_curso', 'Llamada hecha'], [$d['estado'], $d['work_status'], $d['work_note']]) && $err($call($tAdminRW, 'lead_mark', ['lead_id' => $req['lead_id'], 'work_status' => 'hecho', 'estado' => 'ganado']), 'ganado');
 });
+check('config_list y lead_list con page enorme: un error que dice el rango, no un error interno', function () use ($call, $tAna, $err) {
+    return $err($call($tAna, 'config_list', ['page' => PHP_INT_MAX]), 'fuera de rango') && $err($call($tAna, 'lead_list', ['page' => '99999999999']), 'fuera de rango');
+});
 check('config_share: enlace firmado con la URL pública y WhatsApp; Beto no comparte la de Ana', function () use ($call, $tAna, $tBeto, $acc, $ok, $err) {
     $d = $ok($call($tAna, 'config_share', ['code' => $acc['code']]));
     return eq(1, preg_match('#^https://configurador\.example\.com/ver/' . $acc['code'] . '\.\d+\.[a-f0-9]{32}$#', $d['url'])) && eq(true, str_contains($d['whatsapp_url'], 'wa.me'))
