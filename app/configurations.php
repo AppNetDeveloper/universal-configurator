@@ -544,6 +544,7 @@ function config_accept(string $code, ?array $viewer, array $customer = [], bool 
         return $p;
     });
     audit('config.accept', $cfg['code'] . ' · ' . money($p['total']) . ' · ' . viewer_label($viewer));
+    unset($_SESSION['undo'][$cfg['code']]);
     return config_get($code, $viewer);
 }
 

@@ -48,7 +48,7 @@ preg_match("/const UPDATE_PUBLIC_KEY = '([^']+)';/", (string) file_get_contents(
 if (($pm[1] ?? '') !== $pub && !isset($o['other-key'])) $fail("la clave no corresponde a UPDATE_PUBLIC_KEY de app/update.php (pública de esta clave: $pub)");
 
 // Lista de archivos: lo que sigue Git (o, fuera de un repositorio, todo menos lo excluido)
-$exclude = '#^(data/|tests/|dist/|\.git|\.claude/|CLAUDE\.md$|bin/release$|app/release-files\.json$|docs/capturas/)#';
+$exclude = '#^(data/|tests/|dist/|\.git|\.claude/|CLAUDE\.md$|bin/release$|app/release-files\.json$|docs/capturas/|docs/ejemplos-adri/)#';
 $list = [];
 $git = is_dir("$src/.git") ? shell_exec('cd ' . escapeshellarg($src) . ' && git ls-files --cached -z 2>/dev/null') : null;
 if (is_string($git) && $git !== '') {

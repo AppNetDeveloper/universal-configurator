@@ -29,7 +29,7 @@ function config_request(string $code, ?array $viewer, array $in, bool $mail = tr
 {
     $cfg = config_find($code, $viewer);
     if (trim((string) ($in['website'] ?? '')) !== '') { // honeypot: un robot rellena todo
-        audit('lead.honeypot', $cfg['code']);
+        if (throttle('lead-hp:' . client_ip_key(), 1, 3600)) audit('lead.honeypot', $cfg['code']); // una línea por conexión y hora
         return ['config' => config_view($cfg), 'lead_id' => null, 'mailed' => false];
     }
     config_require_draft($cfg);
@@ -49,6 +49,7 @@ function config_request(string $code, ?array $viewer, array $in, bool $mail = tr
         return [$p, $leadId];
     });
     audit('config.request', $cfg['code'] . ' · ' . money($p['total']) . ' · lead #' . $leadId);
+    unset($_SESSION['undo'][$cfg['code']]); // ya no se edita: nada que deshacer
     $mailed = $mail && $d['email'] !== '' && save_mail_send($cfg, $d['email']);
     return ['config' => config_get($cfg['code'], $viewer), 'lead_id' => $leadId, 'mailed' => $mailed];
 }
