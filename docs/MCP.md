@@ -183,7 +183,20 @@ price_check {"node_id": 5, "modules": [{"module_type_id": 3, "width_cm": "58,5"}
 - en total: `total`, `total_text`, `tax`, `total_with_tax` y `saved: false`.
 
 En esa sesión, 58,5 dio 185,00 € (tramo 51–60) y 40,5 dio 160,00 € (tramo 40–50). Con la regla del tramo de arriba,
-50,5 en la cajonera (tramos 40–50 y 51–60) da 185,00 € con `tier_rule: "next_up"` (ver la llamada real más abajo).
+50,5 en la cajonera (tramos 40–50 y 51–60) da 185,00 € con `tier_rule: "next_up"`. Llamada real (23-nov):
+
+```
+price_check {"node_id": 5, "modules": [{"module_type_id": 3, "width_cm": "50,5"}, {"module_type_id": 3, "width_cm": 50}, {"module_type_id": 3, "width_cm": 95}]}
+```
+
+```json
+{"node": "Cocina › Línea › Blanco", "total_text": "345,00 €", "valid": false,
+ "lines": [
+  {"width_cm": 50.5, "valid": true, "tier_from_cm": 51, "tier_to_cm": 60, "tier_rule": "next_up",
+   "tier_note": "50,5 cm está entre tramos: se cobra como 51–60 cm.", "price_text": "185,00 €", "error": null},
+  {"width_cm": 50, "valid": true, "tier_from_cm": 40, "tier_to_cm": 50, "tier_rule": "exact", "tier_note": null, "price_text": "160,00 €", "error": null},
+  {"width_cm": 95, "valid": false, "tier_rule": null, "price_text": "—", "error": "95 cm está fuera del ancho de «Cajonera 3 cajones»: entre 40 y 90 cm."}]}
+```
 
 ### `cut_list` (read)
 
