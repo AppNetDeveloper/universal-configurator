@@ -15,6 +15,7 @@ $v = ['kind' => 'user', 'user' => $admin];
 $results = [];
 $broken = [];
 for ($round = 0; $round < 5; $round++) {
+    throttle_clear('ops:u' . $admin['id']); // el límite de cambios (600 cada 10 min) no debe frenar la carrera
     $cfg = config_create($c['blanco'], $v);
     $procs = [];
     foreach (['edit', 'edit', 'edit', 'accept', 'accept', 'edit'] as $mode) {
@@ -35,6 +36,7 @@ for ($round = 0; $round < 5; $round++) {
 }
 $count500 = count(array_filter($results, fn($l) => str_starts_with($l, '500')));
 check('ninguna aceptada quedó con módulos distintos de su foto (' . count($results) . ' operaciones)', fn() => eq([], $broken));
+check('las ediciones no chocaron con el límite de cambios (si no, la carrera no se probaría): ningún 429', fn() => eq(0, count(array_filter($results, fn($l) => $l === '429'))));
 check('ningún error interno (500) bajo concurrencia', fn() => eq(0, $count500, implode(' | ', array_slice(array_filter($results, fn($l) => str_starts_with($l, '500')), 0, 3))));
 check('se aceptaron todas (una vez cada una) y los demás recibieron 409', fn() => eq(5, count(array_filter($results, fn($l) => $l === 'ok')) >= 5 ? 5 : -1)
     && eq(true, in_array('409', $results, true)));
