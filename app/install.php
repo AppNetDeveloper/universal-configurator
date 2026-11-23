@@ -111,10 +111,11 @@ function install_handle(string $path, string $method): void
     $errors = [];
     if (is_dir(UC_DATA) && is_writable(UC_DATA)) install_code();
     if ($method === 'POST') {
-        $given = strtoupper(preg_replace('/\s+/', '', (string) ($_POST['install_code'] ?? '')));
+        $norm = fn(string $c) => strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '', $c)); // con o sin guiones, en mayúsculas o no
+        $given = $norm((string) ($_POST['install_code'] ?? ''));
         if (!csrf_valid((string) ($_POST['_csrf'] ?? ''))) {
             $errors[] = t('La sesión ha caducado: vuelve a enviar el formulario.');
-        } elseif (!is_file(install_code_file()) || !hash_equals(install_code(), $given)) {
+        } elseif (!is_file(install_code_file()) || $given === '' || !hash_equals($norm(install_code()), $given)) {
             $errors[] = t('El código de instalación no es correcto. Está en el servidor, en {f} (por ejemplo: cat {f}).', ['f' => install_code_file()]);
         } else {
             try {

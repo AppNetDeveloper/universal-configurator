@@ -232,6 +232,7 @@ function mcp_price_check(array $a): array
     $nodeId = parse_int($a['node_id'], 'node_id');
     if (!node_get($nodeId) || !node_branch_active($nodeId)) throw new UcError(t('El nodo {id} no existe o no está disponible. Mira los nodos con catalog_tree.', ['id' => $nodeId]));
     if (!is_array($a['modules']) || !array_is_list($a['modules'])) throw new UcError(t('modules debe ser una lista [{module_type_id, width_cm}].'));
+    if (count($a['modules']) > CONFIG_MAX_LINES) throw new UcError(t('Demasiados módulos: {n}. Como mucho {max} por llamada.', ['n' => count($a['modules']), 'max' => CONFIG_MAX_LINES]));
     $items = [];
     foreach ($a['modules'] as $i => $m) {
         if (!is_array($m)) throw new UcError(t('modules[{i}] debe ser un objeto {module_type_id, width_cm}.', ['i' => $i]));
@@ -376,7 +377,9 @@ function mcp_handle(string $method): void
     }
     $dest = strtolower((string) request_header('Sec-Fetch-Dest'));
     if ($dest !== '' && $dest !== 'empty') { json_response(['error' => 'forbidden'], 403); return; }
-    [$status, $body] = mcp_process(request_header('Authorization'), (string) file_get_contents('php://input'));
+    $raw = request_body_limited();
+    if ($raw === null) { json_response(mcp_error(null, -32600, 'Petición demasiado grande (máximo ' . intdiv(UC_MAX_BODY, 1024) . ' KB). No se ha hecho nada.'), 413); return; }
+    [$status, $body] = mcp_process(request_header('Authorization'), $raw);
     if ($status === 401) header('WWW-Authenticate: Bearer realm="universal-configurator"');
     if ($body === null) { http_response_code($status); return; }
     json_response($body, $status);

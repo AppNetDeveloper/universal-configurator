@@ -8,7 +8,8 @@ declare(strict_types=1);
  */
 
 const UC_VERSION = '0.1.0';
-const UC_SCHEMA = 5;
+const UC_SCHEMA = 6;
+const UC_MAX_BODY = 256 * 1024; // cuerpo máximo de una petición a /api y /mcp
 const UC_AUTHOR_URL = 'https://www.bionicadri.com';
 
 /** Crédito de autoría (lo exige la Licencia BionicAdri: no se debe eliminar). */
@@ -219,6 +220,7 @@ function migrate(): void
         name TEXT NOT NULL, qty INTEGER NOT NULL, thickness_mm REAL NOT NULL, length_mm REAL NOT NULL, width_mm REAL NOT NULL,
         grain TEXT NOT NULL DEFAULT '', edge_banding TEXT NOT NULL DEFAULT '', sort INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS config_item_parts_item ON config_item_parts (config_item_id, sort);
+    CREATE INDEX IF NOT EXISTS config_items_wall ON config_items (config_wall_id, sort);
     SQL);
     // v4: versión de sesión (cambiar la contraseña o desactivar cierra las demás sesiones) y registro pendiente de verificar.
     $uc = array_column(rows('PRAGMA table_info(users)'), 'name');
@@ -526,6 +528,15 @@ function throttle(string $key, int $max, int $window): bool
 function throttle_purge(): void
 {
     q('DELETE FROM throttle WHERE reset_at < ?', [time()]);
+    q('DELETE FROM login_backoff WHERE last_fail_at < ?', [clock() - 3600]);
+}
+
+/** Cuerpo de la petición con tope de tamaño; null si lo pasa (el que llama responde 413 sin hacer nada). */
+function request_body_limited(int $max = UC_MAX_BODY): ?string
+{
+    if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > $max) return null;
+    $raw = (string) file_get_contents('php://input', false, null, 0, $max + 1);
+    return strlen($raw) > $max ? null : $raw;
 }
 
 function throttle_clear(string $key): void

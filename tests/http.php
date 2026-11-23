@@ -28,6 +28,7 @@ $BASE = "http://127.0.0.1:$port";
 
 $fails = 0;
 $count = 0;
+const UC_SCHEMA_EXPECTED = '6';
 function check(string $name, callable $fn): void
 {
     global $fails, $count;
@@ -106,9 +107,9 @@ check('instalar sin CSRF no instala', function () use ($adm, $data) {
     $adm->post('/install', ['empresa' => 'X', 'admin_name' => 'A', 'admin_email' => 'a@x.test', 'admin_password' => 'secreta123']);
     return eq(false, is_file("$data/config.php"));
 });
-check('instalar crea config.php, la base, el admin y los datos de ejemplo', function () use ($adm, $data) {
+check('instalar (con el código sin guiones y en minúsculas) crea config.php, la base, el admin y los datos de ejemplo', function () use ($adm, $data) {
     $csrf = Browser::csrf($adm->get('/install')['body']);
-    $r = $adm->post('/install', ['_csrf' => $csrf, 'install_code' => trim((string) file_get_contents("$data/install-code.txt")), 'empresa' => 'Cocinas Demo', 'timezone' => 'Europe/Madrid', 'admin_name' => 'Admin',
+    $r = $adm->post('/install', ['_csrf' => $csrf, 'install_code' => strtolower(str_replace('-', '', trim((string) file_get_contents("$data/install-code.txt")))), 'empresa' => 'Cocinas Demo', 'timezone' => 'Europe/Madrid', 'admin_name' => 'Admin',
         'admin_email' => 'admin@demo.test', 'admin_password' => 'admin-12345', 'sample' => '1', 'url' => $GLOBALS['BASE']]);
     return eq(303, $r['status']) && eq('/admin', loc($r)) && eq(true, is_file("$data/config.php")) && eq(true, is_file("$data/configurator.sqlite"))
         && eq(false, is_file("$data/install-code.txt"), 'el código se borra al usarlo');
@@ -437,6 +438,17 @@ check('registro por HTTP: mismo mensaje exista o no; el enlace del correo activa
     $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '21', 'mail_transport' => 'log', 'smtp_port' => '587', 'url_publica' => $BASE]);
     return eq(303, $r1['status']) && eq(303, $r2['status']) && eq(true, str_contains($msg1, 'Si el correo es válido') && str_contains($msg2, 'Si el correo es válido'))
         && eq('/configurar', loc($r3)) && eq(false, str_contains($form['body'], 'caducado'));
+});
+
+check('G: con la base bloqueada durante una actualización de esquema, 503 «actualizando» sin trazas', function () use ($BASE, $data) {
+    $pdo = new PDO('sqlite:' . $data . '/configurator.sqlite');
+    $pdo->exec("UPDATE meta SET value = '4' WHERE key = 'schema_version'");
+    $pdo->exec('BEGIN EXCLUSIVE');
+    $b = new Browser($BASE);
+    $r = $b->get('/');
+    $pdo->exec('ROLLBACK');
+    $pdo->exec("UPDATE meta SET value = '" . UC_SCHEMA_EXPECTED . "' WHERE key = 'schema_version'");
+    return eq(503, $r['status']) && eq(true, str_contains($r['body'], 'Actualizando')) && eq(false, str_contains($r['body'], '#0') || str_contains($r['body'], 'PDOException'));
 });
 
 // --- salir

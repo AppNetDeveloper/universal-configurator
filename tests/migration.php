@@ -40,7 +40,7 @@ file_put_contents(UC_DATA . '/config.php', "<?php return ['secret' => 'x'];");
 ensure_schema();
 
 $cols = fn(string $t) => array_column(rows("PRAGMA table_info($t)"), 'name');
-check('versión de esquema al día (5)', fn() => eq('5', val("SELECT value FROM meta WHERE key = 'schema_version'")));
+check('versión de esquema al día (6)', fn() => eq('6', val("SELECT value FROM meta WHERE key = 'schema_version'")));
 check('tramos en mm (30–40 cm → 300–400 mm), sin columnas en cm', fn() => eq([[300, 400], [410, 600], [300, 600]], array_map(fn($r) => [(int) $r['from_mm'], (int) $r['to_mm']], rows('SELECT * FROM price_tiers ORDER BY id')))
     && eq(false, in_array('from_cm', $cols('price_tiers'), true)));
 check('el CHECK desde ≤ hasta sigue valiendo en mm', function () {

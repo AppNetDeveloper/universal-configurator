@@ -16,6 +16,8 @@ declare(strict_types=1);
 
 const CONFIG_STATUSES = ['draft' => 'Borrador', 'accepted' => 'Aceptada', 'cancelled' => 'Anulada'];
 const CONFIG_OPS = ['set_width', 'remove', 'add', 'replace', 'customer'];
+const CONFIG_MAX_OPS = 100;      // operaciones por petición
+const CONFIG_MAX_LINES = 300;    // líneas (módulos) por configuración
 
 function config_code_new(): string
 {
@@ -118,6 +120,7 @@ function config_customer_input(array $in, bool $withNotes = false): array
         if (!array_key_exists($k, $in)) continue;
         if (!is_scalar($in[$k]) && $in[$k] !== null) throw new UcError(t('customer.{k} tiene que ser texto.', ['k' => $k]));
         $v = trim((string) $in[$k]);
+        if ($k !== 'notes') $v = trim((string) preg_replace('/[\r\n\t]+/', ' ', $v)); // una línea (también contra fórmulas en el CSV)
         if ($k === 'email' && $v !== '' && !filter_var($v, FILTER_VALIDATE_EMAIL)) throw new UcError(t('El correo «{v}» no es válido.', ['v' => $v]));
         $d[$col] = mb_substr($v, 0, $k === 'notes' ? 4000 : 160);
     }
@@ -392,14 +395,24 @@ function config_apply_ops(string $code, array $ops, ?array $viewer): array
     $cfg = config_find($code, $viewer);
     config_require_draft($cfg);
     if (!$ops || !array_is_list($ops)) throw new UcError(t('ops debe ser una lista de operaciones, p. ej. [{"op": "set_width", "item_id": 12, "width_cm": 60}].'));
+    // Topes ANTES de abrir la transacción: un lote enorme se rechaza al momento y no bloquea la base.
+    if (count($ops) > CONFIG_MAX_OPS) {
+        throw new UcError(t('Demasiadas operaciones en una llamada: {n}. Como mucho {max}; parte el cambio en varias llamadas. No se ha hecho nada.', ['n' => count($ops), 'max' => CONFIG_MAX_OPS]), ['max_ops' => CONFIG_MAX_OPS]);
+    }
+    $adds = count(array_filter($ops, fn($o) => is_array($o) && ($o['op'] ?? '') === 'add'));
+    $lines = (int) val('SELECT COUNT(*) FROM config_items i JOIN config_walls w ON w.id = i.config_wall_id WHERE w.configuration_id = ?', [$cfg['id']]);
+    if ($lines + $adds > CONFIG_MAX_LINES) {
+        throw new UcError(t('Una configuración tiene como mucho {max} módulos: tiene {n} y la llamada añade {a}. No se ha hecho nada.', ['max' => CONFIG_MAX_LINES, 'n' => $lines, 'a' => $adds]), ['max_lines' => CONFIG_MAX_LINES]);
+    }
     $notes = [];
-    tx(function () use ($cfg, $ops, &$notes) {
+    $ctx = [];
+    tx(function () use ($cfg, $ops, &$notes, &$ctx) {
         $now = row('SELECT * FROM configurations WHERE id = ?', [$cfg['id']]);
         config_require_draft($now ?? $cfg);
         foreach ($ops as $n => $op) {
             try {
                 if (!is_array($op)) throw new UcError(t('cada operación es un objeto con «op».'));
-                $notes = array_merge($notes, config_apply_one($now, $op));
+                $notes = array_merge($notes, config_apply_one($now, $op, $ctx));
             } catch (UcError $ex) {
                 $name = is_array($op) ? (string) ($op['op'] ?? '?') : '?';
                 throw new UcError((count($ops) > 1 ? "ops[$n] ($name): " : '') . $ex->getMessage(), $ex->data + ['op_index' => $n], $ex->status);
@@ -412,19 +425,19 @@ function config_apply_ops(string $code, array $ops, ?array $viewer): array
 }
 
 /** @return list<string> notas (p. ej. ancho ajustado) */
-function config_apply_one(array $cfg, array $op): array
+function config_apply_one(array $cfg, array $op, array &$ctx = []): array
 {
     // Se vuelve a leer el estado AQUÍ (dentro de la transacción de quien llama): una fila leída antes de que otra
     // petición aceptara la configuración no sirve para cambiarla.
-    return tx(function () use ($cfg, $op) {
+    return tx(function () use ($cfg, $op, &$ctx) {
         $now = row('SELECT * FROM configurations WHERE id = ?', [$cfg['id']]) ?? throw new UcError(t('La configuración ya no existe.'), [], 404);
         config_require_draft($now);
-        return config_apply_one_checked($now, $op);
+        return config_apply_one_checked($now, $op, $ctx);
     });
 }
 
-/** @return list<string> */
-function config_apply_one_checked(array $cfg, array $op): array
+/** @return list<string> — $ctx guarda entre operaciones de la misma llamada el siguiente «sort» de cada pared. */
+function config_apply_one_checked(array $cfg, array $op, array &$ctx = []): array
 {
     $kind = (string) ($op['op'] ?? '');
     if (!isset(CONFIG_OP_FIELDS[$kind])) throw new UcError(t('Operación «{v}» desconocida. Valen: {ops}.', ['v' => $kind, 'ops' => implode(', ', CONFIG_OPS)]));
@@ -449,7 +462,9 @@ function config_apply_one_checked(array $cfg, array $op): array
             $w = op_width_mm($op);
             if ($w !== null) config_check_width($cfg, (int) $type['id'], $w);
             else $w = ancho_sugerido((int) $type['id'], (int) $cfg['node_id']) ?? throw new UcError(tiers_error_text($type['name'], 0, []));
-            $sort = (int) val('SELECT COALESCE(MAX(sort), 0) + 10 FROM config_items WHERE config_wall_id = ?', [$wid]);
+            // El siguiente «sort» de la pared se calcula una vez por llamada, no en cada add.
+            $ctx['sort'][$wid] ??= (int) val('SELECT COALESCE(MAX(sort), 0) FROM config_items WHERE config_wall_id = ?', [$wid]);
+            $sort = $ctx['sort'][$wid] += 10;
             insert('config_items', ['config_wall_id' => $wid, 'module_type_id' => (int) $type['id'], 'width_mm' => $w,
                 'height_mm' => (int) $type['height_mm'], 'depth_mm' => (int) $type['depth_mm'], 'sort' => $sort]);
             return [];
@@ -490,8 +505,9 @@ function config_accept(string $code, ?array $viewer, array $customer = [], bool 
     $cfg = config_find($code, $viewer);
     config_require_draft($cfg);
     $guest = $viewer['kind'] === 'guest';
-    $cust = ['customer_name' => trim((string) ($customer['name'] ?? $cfg['customer_name'])), 'customer_email' => trim((string) ($customer['email'] ?? $cfg['customer_email'])),
-        'customer_phone' => trim((string) ($customer['phone'] ?? $cfg['customer_phone']))];
+    $line = fn($v) => trim((string) preg_replace('/[\r\n\t]+/', ' ', (string) $v));
+    $cust = ['customer_name' => $line($customer['name'] ?? $cfg['customer_name']), 'customer_email' => $line($customer['email'] ?? $cfg['customer_email']),
+        'customer_phone' => $line($customer['phone'] ?? $cfg['customer_phone'])];
     if ($cust['customer_email'] !== '' && !filter_var($cust['customer_email'], FILTER_VALIDATE_EMAIL)) throw new UcError(t('El correo «{v}» no es válido.', ['v' => $cust['customer_email']]));
     if ($guest) {
         if ($cust['customer_name'] === '' || $cust['customer_email'] === '' || $cust['customer_phone'] === '') throw new UcError(t('Para aceptar escribe tu nombre, tu correo y tu teléfono.'));
@@ -577,7 +593,7 @@ function csv_cell(mixed $v): string
 {
     $s = (string) $v;
     if (!preg_match('/^-?\d+([.,]\d+)?$/', $s)) {
-        $s = (string) preg_replace_callback('/(^|[,;])(\s*)([=+\-@\t\r])/', fn($m) => $m[1] . $m[2] . "'" . $m[3], $s);
+        $s = (string) preg_replace_callback('/(^|[,;\r\n])([ \t]*)([=+\-@\t\r])/', fn($m) => $m[1] . $m[2] . "'" . $m[3], $s);
     }
     return preg_match('/[;,"\r\n]/', $s) ? '"' . str_replace('"', '""', $s) . '"' : $s;
 }

@@ -90,7 +90,8 @@ function api_handle(string $method, string $path): void
     if ($method === 'GET') {
         $body = $_GET;
     } else {
-        $raw = (string) file_get_contents('php://input');
+        $raw = request_body_limited();
+        if ($raw === null) { json_response(['ok' => false, 'error' => t('La petición es demasiado grande (máximo {k} KB). No se ha hecho nada.', ['k' => intdiv(UC_MAX_BODY, 1024)])], 413); return; }
         $body = $raw === '' ? [] : json_decode($raw, true);
         if (!is_array($body)) { json_response(['ok' => false, 'error' => t('JSON no válido.')], 400); return; }
     }
