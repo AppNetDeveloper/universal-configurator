@@ -44,7 +44,7 @@
         <thead><tr><th><?= te('Pieza') ?></th><th class="r"><?= te('Cant.') ?></th><th class="r"><?= te('Espesor') ?></th><th class="r"><?= te('Largo') ?></th><th class="r"><?= te('Ancho') ?></th><th class="hide-sm"><?= te('Origen') ?></th></tr></thead>
         <tbody>
         <?php foreach ($cut as $r): ?>
-          <tr><td><?= e($r['name']) ?><div class="small muted"><?= e(trim($r['grain'] . ' · ' . $r['edge_banding'], ' ·')) ?></div></td><td class="r num"><?= (int) $r['qty'] ?></td><td class="r num"><?= e(mm_text($r['thickness_mm'])) ?></td><td class="r num"><?= e(mm_text($r['length_mm'])) ?></td><td class="r num"><?= e(mm_text($r['width_mm'])) ?></td>
+          <tr><td><?= e(implode(' / ', $r['names'])) ?><div class="small muted"><?= e(trim($r['grain'] . ' · ' . $r['edge_banding'], ' ·')) ?></div></td><td class="r num"><?= (int) $r['qty'] ?></td><td class="r num"><?= e(mm_text($r['thickness_mm'])) ?></td><td class="r num"><?= e(mm_text($r['length_mm'])) ?></td><td class="r num"><?= e(mm_text($r['width_mm'])) ?></td>
             <td class="small hide-sm"><?= e(implode(' · ', array_map(fn($f) => $f['module'] . ' ' . str_replace('.', ',', (string) $f['width_cm']) . ' cm ×' . $f['qty'], $r['from']))) ?></td></tr>
         <?php endforeach; ?>
         </tbody>

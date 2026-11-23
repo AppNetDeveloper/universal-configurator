@@ -111,6 +111,13 @@ check('al aceptar se congela el despiece: cambiar la fórmula después no lo cam
     $draft = array_column(piezas_de_linea(['module_type_id' => $caj, 'width_mm' => 585]), null, 'name')['Base']['length_mm'];
     return eq(547.0, $base($acc)) && eq(547.0, $base($after)) && eq(485.0, $draft, 'un borrador sí usa la fórmula nueva');
 });
+check('lista de corte: piezas iguales con nombres distintos se suman en una fila con sus nombres', function () use ($caj) {
+    $view = ['walls' => [['name' => 'P', 'items' => [['id' => 1, 'type_name' => 'X', 'width_cm' => 60, 'parts' => [
+        ['name' => 'Base', 'qty' => 1, 'thickness_mm' => 19.0, 'length_mm' => 562.0, 'width_mm' => 560.0, 'grain' => 'largo', 'edge_banding' => '1L', 'error' => null],
+        ['name' => 'Techo', 'qty' => 1, 'thickness_mm' => 19.0, 'length_mm' => 562.0, 'width_mm' => 560.0, 'grain' => 'largo', 'edge_banding' => '1L', 'error' => null]]]]]]];
+    $cl = cut_list($view);
+    return eq(1, count($cl)) && eq(2, $cl[0]['qty']) && eq(['Base', 'Techo'], $cl[0]['names']);
+});
 check('las descargas llevan el despiece y la lista de corte', function () use ($cfg, $v) {
     $view = config_get($cfg['code'], $v);
     $j = json_decode(config_export_json($view), true);

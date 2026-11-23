@@ -88,7 +88,7 @@ check('una sola función de precio: la API, el panel y el MCP llaman a precio_co
     $src = '';
     foreach (glob(dirname(__DIR__) . '/app/*.php') as $f) if (basename($f) !== 'pricing.php') $src .= file_get_contents($f);
     // Nadie más busca tramos por su cuenta
-    return eq(0, preg_match_all('/FROM\s+price_tiers\s+WHERE[^;]*(from_cm\s*<=|BETWEEN)/i', $src), 'búsqueda de tramo fuera de pricing.php')
+    return eq(0, preg_match_all('/FROM\s+price_tiers\s+WHERE[^;]*(from_mm\s*<=|from_cm\s*<=|BETWEEN)/i', $src), 'búsqueda de tramo fuera de pricing.php')
         && eq(0, preg_match('/price\s*\*|priceFor|tramo.*js/i', (string) @file_get_contents(dirname(__DIR__) . '/public/assets/app.js')), 'cálculo de precio en JavaScript');
 });
 

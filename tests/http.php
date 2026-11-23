@@ -383,6 +383,58 @@ check('panel: revocar el token deja el MCP en 401', function () use ($adm, $admi
     return eq(401, $mcp($tokAna, 'ping')['status']);
 });
 
+check('panel: medidas del tipo se guardan; mínimo mayor que máximo avisa y no se guarda', function () use ($adm, $adminCsrf) {
+    $tid = $GLOBALS['zap'];
+    $base = ['_csrf' => $adminCsrf, 'name' => 'Zapatero', 'ref' => 'ZAP', 'family' => 'bajo', 'width_mm' => '500', 'height_mm' => '720', 'depth_mm' => '350',
+        'min_width_mm' => '400', 'max_width_mm' => '600', 'board_mm' => '18,5', 'back_mm' => '8', 'sort' => '0', 'description' => ''];
+    $adm->post("/admin/tipos/$tid", $base);
+    $ok = $adm->get("/admin/tipos/$tid")['body'];
+    $adm->post("/admin/tipos/$tid", ['min_width_mm' => '700'] + $base);
+    $bad = $adm->get("/admin/tipos/$tid")['body'];
+    return eq(true, str_contains($ok, 'name="board_mm" inputmode="decimal" class="w-num" value="18,5"') && str_contains($ok, 'name="height_mm" min="1" class="w-num" value="720"'))
+        && eq(true, str_contains($bad, 'mayor que el máximo')) && eq(true, str_contains($adm->get("/admin/tipos/$tid")['body'], 'name="min_width_mm" min="1" class="w-num" value="400"'));
+});
+check('panel: una pieza con fórmula mala avisa y no se guarda; una buena se guarda con su vista previa', function () use ($adm, $adminCsrf) {
+    $tid = $GLOBALS['zap'];
+    $adm->post("/admin/tipos/$tid/pieza", ['_csrf' => $adminCsrf, 'name' => 'Lateral', 'qty' => '2', 'thickness' => 'T', 'length_expr' => 'W - ancho', 'width_expr' => 'D', 'grain' => 'largo', 'edge_banding' => '1L']);
+    $bad = $adm->get("/admin/tipos/$tid")['body'];
+    $adm->post("/admin/tipos/$tid/pieza", ['_csrf' => $adminCsrf, 'name' => 'Lateral', 'qty' => '2', 'thickness' => 'T', 'length_expr' => 'H', 'width_expr' => 'D - 20', 'grain' => 'largo', 'edge_banding' => '1L']);
+    $good = $adm->get("/admin/tipos/$tid")['body'];
+    return eq(true, str_contains($bad, 'Variable desconocida')) && eq(0, preg_match("#/admin/tipos/$tid/pieza/\\d+\"#", $bad), 'no se guardó ninguna pieza')
+        && eq(true, str_contains($good, 'value="Lateral"') && str_contains($good, '2 × 18,5 · 720 × 330 mm'));
+});
+check('panel: editar y borrar una pieza', function () use ($adm, $adminCsrf, $idFrom) {
+    $tid = $GLOBALS['zap'];
+    $pid = $idFrom($adm->get("/admin/tipos/$tid")['body'], "#/admin/tipos/$tid/pieza/(\d+)\"#");
+    $adm->post("/admin/tipos/$tid/pieza/$pid", ['_csrf' => $adminCsrf, 'name' => 'Costado', 'qty' => '2', 'thickness' => 'T', 'length_expr' => 'H - 10', 'width_expr' => 'D - 20', 'grain' => 'largo', 'edge_banding' => '', 'sort' => '10']);
+    $edited = $adm->get("/admin/tipos/$tid")['body'];
+    $adm->post("/admin/tipos/$tid/pieza/$pid/borrar", ['_csrf' => $adminCsrf]);
+    $gone = $adm->get("/admin/tipos/$tid")['body'];
+    return eq(true, str_contains($edited, 'value="Costado"') && str_contains($edited, '710 × 330')) && eq(false, str_contains($gone, 'value="Costado"'));
+});
+check('panel: descargas de despiece y de lista de corte', function () use ($adm, $code) {
+    $p = $adm->get("/admin/configuraciones/$code-despiece.csv");
+    $c = $adm->get("/admin/configuraciones/$code-corte.csv");
+    return eq(200, $p['status']) && eq(true, str_contains($p['headers'], 'attachment') && str_contains($p['body'], 'pieza;cantidad;espesor_mm;largo_mm;ancho_mm'))
+        && eq(true, str_contains($p['body'], ';Lateral;2;19;720;560;')) && eq(200, $c['status']) && eq(true, str_contains($c['body'], 'Lateral') && str_contains($c['headers'], 'attachment'));
+});
+check('registro por HTTP: mismo mensaje exista o no; el enlace del correo activa la cuenta y entra', function () use ($adm, $adminCsrf, $BASE, $data) {
+    $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '21', 'mail_transport' => 'log', 'smtp_port' => '587', 'url_publica' => $BASE, 'permitir_registro' => '1']);
+    $b = new Browser($BASE);
+    $f = $b->get('/registro')['body'];
+    $r1 = $b->post('/registro', ['_csrf' => Browser::csrf($f), 'name' => 'Rosa', 'email' => 'rosa@demo.test']);
+    $msg1 = $b->get('/')['body'];
+    $r2 = $b->post('/registro', ['_csrf' => Browser::csrf($b->get('/registro')['body']), 'name' => 'Otra', 'email' => 'ana@demo.test']);
+    $msg2 = $b->get('/')['body'];
+    preg_match_all('#/restablecer\?token=([a-f0-9]+)#', (string) file_get_contents("$data/mail.log"), $m);
+    $tok = end($m[1]);
+    $form = $b->get('/restablecer?token=' . $tok);
+    $r3 = $b->post('/restablecer', ['_csrf' => Browser::csrf($form['body']), 'token' => $tok, 'password' => 'rosa-clave-123', 'password2' => 'rosa-clave-123']);
+    $adm->post('/admin/ajustes', ['_csrf' => $adminCsrf, 'empresa' => 'Cocinas Demo', 'iva' => '21', 'mail_transport' => 'log', 'smtp_port' => '587', 'url_publica' => $BASE]);
+    return eq(303, $r1['status']) && eq(303, $r2['status']) && eq(true, str_contains($msg1, 'Si el correo es válido') && str_contains($msg2, 'Si el correo es válido'))
+        && eq('/configurar', loc($r3)) && eq(false, str_contains($form['body'], 'caducado'));
+});
+
 // --- salir
 check('salir cierra la sesión', function () use ($ana) {
     $ana->post('/salir', ['_csrf' => Browser::csrf($ana->get('/configurar')['body'])]);

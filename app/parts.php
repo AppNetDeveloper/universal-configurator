@@ -106,7 +106,8 @@ function piezas_de_linea(array $item): array
 
 /**
  * Lista de corte de una configuración (su vista de config_view): piezas iguales (espesor, largo, ancho, veta y
- * canto) sumadas, con el módulo de origen de cada una. Las piezas con error no entran.
+ * canto) sumadas aunque se llamen distinto (names las lista; name es la primera), con el módulo de origen de cada una.
+ * Las piezas con error no entran.
  */
 function cut_list(array $view): array
 {
@@ -115,10 +116,12 @@ function cut_list(array $view): array
         foreach ($w['items'] as $it) {
             foreach ($it['parts'] as $p) {
                 if ($p['error'] !== null || $p['length_mm'] === null) continue;
-                $key = implode('|', [$p['thickness_mm'], $p['length_mm'], $p['width_mm'], $p['grain'], $p['edge_banding'], $p['name']]);
-                $acc[$key] ??= ['name' => $p['name'], 'qty' => 0, 'thickness_mm' => $p['thickness_mm'], 'length_mm' => $p['length_mm'], 'width_mm' => $p['width_mm'],
+                // Iguales = mismo espesor, largo y ancho (y misma veta y canto, que cambian cómo se corta y se chapa).
+                $key = implode('|', [$p['thickness_mm'], $p['length_mm'], $p['width_mm'], $p['grain'], $p['edge_banding']]);
+                $acc[$key] ??= ['name' => $p['name'], 'names' => [], 'qty' => 0, 'thickness_mm' => $p['thickness_mm'], 'length_mm' => $p['length_mm'], 'width_mm' => $p['width_mm'],
                     'grain' => $p['grain'], 'edge_banding' => $p['edge_banding'], 'from' => []];
                 $acc[$key]['qty'] += $p['qty'];
+                if (!in_array($p['name'], $acc[$key]['names'], true)) $acc[$key]['names'][] = $p['name'];
                 $acc[$key]['from'][] = ['item_id' => $it['id'], 'module' => $it['type_name'], 'wall' => $w['name'], 'width_cm' => $it['width_cm'], 'qty' => $p['qty']];
             }
         }

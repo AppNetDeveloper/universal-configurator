@@ -618,7 +618,7 @@ function config_export_cut_csv(array $view): string
 {
     $rows = [['codigo', 'pieza', 'cantidad', 'espesor_mm', 'largo_mm', 'ancho_mm', 'veta', 'canto', 'origen']];
     foreach (cut_list($view) as $r) {
-        $rows[] = [$view['code'], $r['name'], $r['qty'], mm_text($r['thickness_mm']), mm_text($r['length_mm']), mm_text($r['width_mm']), $r['grain'], $r['edge_banding'],
+        $rows[] = [$view['code'], implode(' / ', $r['names']), $r['qty'], mm_text($r['thickness_mm']), mm_text($r['length_mm']), mm_text($r['width_mm']), $r['grain'], $r['edge_banding'],
             implode(' | ', array_map(fn($f) => "{$f['module']} {$f['width_cm']} cm (línea {$f['item_id']}, {$f['wall']}) ×{$f['qty']}", $r['from']))];
     }
     return csv_join($rows);
