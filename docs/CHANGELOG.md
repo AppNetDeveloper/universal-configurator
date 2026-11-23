@@ -8,7 +8,9 @@ Arreglos de una revisión de seguridad independiente (cada uno con su prueba, pr
   que antes de tocar `data/` pasa al dueño de `data/`). Terminar una actualización: sin `uid`, con un `pending.json`
   que sea un enlace o con un `rollback.php` que no sea del mismo usuario, no se hace. Los textos dicen
   `sudo -u www-data php bin/uc …`; con el código del instalador, se actualiza con `sudo ./install.sh` de la versión
-  nueva. Una actualización lanzada como root con la 0.3.0 la termina el servidor web en la siguiente visita.
+  nueva. Si actualizas a esta versión como root (como decía el manual de la 0.3.0), el último paso se niega con un
+  aviso y lo termina la siguiente visita a la web (o `sudo -u www-data php bin/uc update:finish`): comprobado con el
+  paquete firmado de verdad.
 - **Actualizaciones:** el paquete se comprueba (sha256) y se extrae de la misma copia privada.
 - **Límites atómicos:** `throttle()` cuenta y comprueba en una sola sentencia (antes, con peticiones simultáneas,
   entraban 15 peticiones de presupuesto con un límite de 5). Requisito nuevo: SQLite 3.35.
