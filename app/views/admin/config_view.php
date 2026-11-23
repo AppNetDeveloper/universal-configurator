@@ -1,5 +1,5 @@
 <?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
-<?php /** @var array $cfg @var array $cut */ ?>
+<?php /** @var array $cfg @var array $cut @var array $adri @var ?array $lead */ ?>
 <nav class="crumbs"><a href="/admin/configuraciones"><?= te('Configuraciones') ?></a><span>›</span><span class="mono"><?= e($cfg['code']) ?></span></nav>
 <div class="page-head">
   <h1><span class="mono"><?= e($cfg['code']) ?></span> <span class="badge badge-<?= e($cfg['status']) ?>"><?= e($cfg['status_label']) ?></span></h1>
@@ -9,6 +9,7 @@
     <a class="btn btn-ghost" href="/admin/configuraciones/<?= e($cfg['code']) ?>-despiece.csv"><?= te('Despiece CSV') ?></a>
     <a class="btn btn-ghost" href="/admin/configuraciones/<?= e($cfg['code']) ?>-corte.csv"><?= te('Lista de corte CSV') ?></a>
     <?php if ($cfg['status'] === 'draft'): ?><a class="btn btn-ghost" href="/configurar/<?= e($cfg['code']) ?>"><?= te('Editar') ?></a><?php endif; ?>
+    <?php if ($cfg['status'] === 'requested'): ?><form method="post" action="/admin/configuraciones/<?= e($cfg['code']) ?>/aceptar" class="inline"><?= csrf_field() ?><button class="btn btn-primary" type="submit"><?= te('Aceptar (cerrar la venta)') ?></button></form><?php endif; ?>
     <form method="post" action="/configurar/<?= e($cfg['code']) ?>/duplicar" class="inline"><?= csrf_field() ?><button class="btn btn-ghost" type="submit"><?= te('Duplicar') ?></button></form>
     <?php if ($cfg['status'] !== 'cancelled'): ?><form method="post" action="/admin/configuraciones/<?= e($cfg['code']) ?>/anular" class="inline" data-confirm="<?= te('¿Anular {c}?', ['c' => $cfg['code']]) ?>"><?= csrf_field() ?><button class="btn btn-danger" type="submit"><?= te('Anular') ?></button></form><?php endif; ?>
   </div>
@@ -58,12 +59,41 @@
       <div><dt><?= te('Cliente') ?></dt><dd><?= e($cfg['customer']['name'] ?: '—') ?><br><span class="small muted"><?= e(trim($cfg['customer']['email'] . ' · ' . $cfg['customer']['phone'], ' ·')) ?></span></dd></div>
       <div><dt><?= te('Hecha por') ?></dt><dd><?= e($cfg['user']['name'] ?? t('Invitado')) ?></dd></div>
       <div><dt><?= te('Creada') ?></dt><dd><?= e(date('d/m/Y H:i', strtotime($cfg['created_at']))) ?></dd></div>
+      <?php if ($cfg['requested_at']): ?><div><dt><?= te('Presupuesto pedido') ?></dt><dd><?= e(date('d/m/Y H:i', strtotime($cfg['requested_at']))) ?></dd></div><?php endif; ?>
       <?php if ($cfg['accepted_at']): ?><div><dt><?= te('Aceptada') ?></dt><dd><?= e(date('d/m/Y H:i', strtotime($cfg['accepted_at']))) ?></dd></div><?php endif; ?>
       <div><dt><?= te('Total sin IVA') ?></dt><dd class="num big"><?= e(money($cfg['total_cents'])) ?></dd></div>
       <div><dt><?= te('IVA ({p} %)', ['p' => $cfg['tax_rate']]) ?></dt><dd class="num"><?= e(money($cfg['tax_cents'])) ?></dd></div>
       <div><dt><?= te('Total con IVA') ?></dt><dd class="num"><?= e(money($cfg['total_with_tax_cents'])) ?></dd></div>
     </dl>
-    <?php if ($cfg['frozen']): ?><p class="fine"><?= te('Precios congelados al aceptar.') ?></p><?php endif; ?>
+    <?php if ($cfg['frozen']): ?><p class="fine"><?= $cfg['status'] === 'requested' ? te('Precio guardado cuando el cliente lo pidió.') : te('Precios congelados al aceptar.') ?></p><?php endif; ?>
     <?php if ($cfg['notes'] !== ''): ?><p><strong><?= te('Notas') ?></strong><br><?= nl2br(e($cfg['notes'])) ?></p><?php endif; ?>
+    <?php if ($lead): ?>
+      <div class="side-block"><h3><?= te('Lead') ?></h3>
+        <p><strong><?= e($lead['name']) ?></strong> · <a href="tel:<?= e(preg_replace('/[^0-9+]/', '', $lead['phone'])) ?>"><?= e($lead['phone']) ?></a><br>
+        <span class="small muted"><?= e($lead['estado_label']) ?> · <?= e((string) $lead['work_status_label']) ?></span>
+        <?php if ($lead['message'] !== ''): ?><br><span class="small">«<?= e($lead['message']) ?>»</span><?php endif; ?></p>
+        <a class="small" href="/admin/leads?q=<?= e(rawurlencode($lead['phone'])) ?>"><?= te('Ver en Leads') ?></a></div>
+    <?php endif; ?>
+    <?php if (in_array($cfg['status'], ['accepted', 'requested'], true)): ?>
+      <form method="post" action="/admin/configuraciones/<?= e($cfg['code']) ?>/trabajo" class="side-block stack">
+        <?= csrf_field() ?>
+        <h3><?= te('Estado de trabajo') ?></h3>
+        <label><?= te('Trabajo') ?><select name="work_status"><?php foreach (WORK_STATUSES as $k => $l): ?><option value="<?= e($k) ?>"<?= $cfg['work_status'] === $k ? ' selected' : '' ?>><?= te($l) ?></option><?php endforeach; ?></select></label>
+        <label><?= te('Nota (una línea)') ?><input name="work_note" maxlength="200" value="<?= e($cfg['work_note']) ?>"></label>
+        <?php if ($cfg['work_by'] !== ''): ?><p class="small muted"><?= te('Último cambio: {q}, {f}', ['q' => $cfg['work_by'], 'f' => date('d/m/Y H:i', strtotime((string) $cfg['work_at']))]) ?></p><?php endif; ?>
+        <button class="btn btn-ghost btn-block" type="submit"><?= te('Guardar') ?></button>
+      </form>
+    <?php endif; ?>
+    <div class="side-block with-adri">
+      <h3><?= te('Con Adri') ?></h3>
+      <?php if ($adri['connected']): ?>
+        <p class="small"><?= te('Adri está conectada: pídele por chat los planos, el presupuesto en PDF o la lista de corte de {c}.', ['c' => $cfg['code']]) ?></p>
+      <?php else: ?>
+        <?php foreach ([[t('Planos CAD'), t('Planta, alzados, cada módulo y cada pieza, en DXF y PDF.')], [t('Presupuesto PDF'), t('Con tu marca, el plano y tus condiciones.')], [t('Lista de corte'), t('Tablero por espesor y piezas agrupadas, para el taller.')]] as [$a, $d]): ?>
+          <div class="adri-action"><button class="btn btn-ghost btn-sm" type="button" disabled aria-describedby="adri-hint"><?= e($a) ?></button><span class="small muted"><?= e($d) ?></span></div>
+        <?php endforeach; ?>
+        <p class="small" id="adri-hint"><a href="/admin"><?= te('Conecta Adri') ?></a> <?= te('para tenerlas.') ?></p>
+      <?php endif; ?>
+    </div>
   </aside>
 </div>

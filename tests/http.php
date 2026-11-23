@@ -555,6 +555,43 @@ check('un nivel con una sola opción no se pregunta y «Atrás» no lleva a un b
         && eq(false, str_contains($page, '← '));
 });
 
+check('panel: el lead del cliente sale en Leads, con su configuración; se marca a mano (estado y trabajo)', function () use ($adm, $adminCsrf, &$gcode) {
+    $p = $adm->get('/admin/leads')['body'];
+    if (!preg_match('#action="/admin/leads/(\d+)"#', $p, $m)) throw new RuntimeException('sin lead');
+    $adm->post("/admin/leads/{$m[1]}", ['_csrf' => $adminCsrf, 'estado' => 'contactado', 'work_status' => 'en_curso', 'work_note' => 'Llamada a las 18:00']);
+    $after = $adm->get('/admin/leads?work_status=en_curso')['body'];
+    return eq(true, str_contains($p, 'Rocío Ibáñez') && str_contains($p, $gcode)) && eq(true, str_contains($after, 'Llamada a las 18:00') && str_contains($after, 'admin@demo.test'));
+});
+check('panel: ficha de una pedida con «Aceptar», lead y estado de trabajo; aceptar desde el panel la deja «nuevo»', function () use ($adm, $adminCsrf, &$gcode) {
+    $p = $adm->get("/admin/configuraciones/$gcode")['body'];
+    $adm->post("/admin/configuraciones/$gcode/aceptar", ['_csrf' => $adminCsrf]);
+    $adm->post("/admin/configuraciones/$gcode/trabajo", ['_csrf' => $adminCsrf, 'work_status' => 'hecho', 'work_note' => 'Planos enviados']);
+    $list = $adm->get('/admin/configuraciones?work_status=hecho')['body'];
+    $pend = $adm->get('/admin/configuraciones?pendientes=1')['body'];
+    return eq(true, str_contains($p, 'Aceptar (cerrar la venta)') && str_contains($p, 'Rocío Ibáñez') && str_contains($p, 'Estado de trabajo'))
+        && eq(true, str_contains($list, $gcode) && str_contains($list, 'Planos enviados')) && eq(false, str_contains($pend, $gcode));
+});
+check('Adri: con un token usado hace poco, «Adri conectada» y sin publicidad; si no, la tarjeta y las acciones apagadas', function () use ($adm, $data, &$gcode) {
+    $pdo = new PDO('sqlite:' . $data . '/configurator.sqlite');
+    $pdo->exec("INSERT INTO mcp_tokens (name, token_hash, scopes, created_at, last_used_at) VALUES ('ADRI prueba', 'h-prueba', 'read', datetime('now'), datetime('now', '-3 days'))");
+    $on = $adm->get('/admin')['body'];
+    $onCfg = $adm->get("/admin/configuraciones/$gcode")['body'];
+    $saved = $pdo->query('SELECT id, last_used_at FROM mcp_tokens')->fetchAll(PDO::FETCH_KEY_PAIR);
+    $pdo->exec("UPDATE mcp_tokens SET last_used_at = '2020-01-01 00:00:00'");
+    $off = $adm->get('/admin')['body'];
+    $offCfg = $adm->get("/admin/configuraciones/$gcode")['body'];
+    foreach ($saved as $id => $at) $pdo->prepare('UPDATE mcp_tokens SET last_used_at = ? WHERE id = ?')->execute([$at, $id]);
+    $pdo->exec("DELETE FROM mcp_tokens WHERE token_hash = 'h-prueba'");
+    return eq(true, str_contains($on, 'Adri conectada') && str_contains($on, 'hace 3 días')) && eq(false, str_contains($on, 'Conecta Adri y olvídate')) && eq(false, str_contains($onCfg, 'disabled aria-describedby="adri-hint"'))
+        && eq(true, str_contains($off, 'Conecta Adri y olvídate') && str_contains($off, '/assets/adri/planta.png') && str_contains($off, 'https://www.bionicadri.com'))
+        && eq(true, str_contains($offCfg, 'disabled aria-describedby="adri-hint"'));
+});
+check('al cliente final, nada de publicidad de Adri: solo el pie de la licencia', function () use (&$guestB, $BASE) {
+    $pages = [$guestB->get('/configurar')['body'], (new Browser($BASE))->get('/')['body']];
+    foreach ($pages as $pg) if (str_contains($pg, 'Conecta Adri') || str_contains($pg, '/assets/adri/')) return false;
+    return eq(true, str_contains($pages[1], 'Hecho con Universal Configurator'));
+});
+
 check('G: con la base bloqueada durante una actualización de esquema, 503 «actualizando» sin trazas', function () use ($BASE, $data) {
     $pdo = new PDO('sqlite:' . $data . '/configurator.sqlite');
     $pdo->exec("UPDATE meta SET value = '4' WHERE key = 'schema_version'");

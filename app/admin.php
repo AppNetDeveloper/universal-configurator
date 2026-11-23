@@ -9,7 +9,7 @@ declare(strict_types=1);
  */
 
 const ADMIN_SECTIONS = [
-    '/' => 'Inicio', '/catalogo' => 'Catálogo', '/tipos' => 'Tipos y tramos', '/configuraciones' => 'Configuraciones',
+    '/' => 'Inicio', '/catalogo' => 'Catálogo', '/tipos' => 'Tipos y tramos', '/configuraciones' => 'Configuraciones', '/leads' => 'Leads',
     '/usuarios' => 'Personas', '/ajustes' => 'Ajustes', '/tokens' => 'Tokens MCP', '/actividad' => 'Actividad',
 ];
 
@@ -22,6 +22,19 @@ function admin_back(string $to, ?UcError $ex = null): never
 {
     if ($ex) { keep_old($_POST); flash($ex->getMessage(), 'error'); }
     redirect('/admin' . $to);
+}
+
+/**
+ * ¿Está Adri conectada? Sí, si algún token MCP sin revocar se ha usado en los últimos 30 días. Solo mira la base de
+ * esta instalación: la app no llama a casa.
+ * @return array{connected: bool, days: ?int, last: ?string}
+ */
+function adri_status(): array
+{
+    $last = val('SELECT MAX(last_used_at) FROM mcp_tokens WHERE revoked_at IS NULL');
+    if (!$last) return ['connected' => false, 'days' => null, 'last' => null];
+    $days = (int) floor((time() - strtotime((string) $last)) / 86400);
+    return ['connected' => $days <= 30, 'days' => $days, 'last' => (string) $last];
 }
 
 function admin_handle(string $path, string $method): void
@@ -42,8 +55,12 @@ function admin_handle(string $path, string $method): void
                 'title' => t('Panel'),
                 'counts' => ['nodes' => (int) val('SELECT COUNT(*) FROM nodes'), 'types' => (int) val('SELECT COUNT(*) FROM module_types WHERE active = 1'),
                     'drafts' => (int) val("SELECT COUNT(*) FROM configurations WHERE status = 'draft'"), 'accepted' => (int) val("SELECT COUNT(*) FROM configurations WHERE status = 'accepted'"),
-                    'users' => (int) val('SELECT COUNT(*) FROM users WHERE active = 1')],
+                    'users' => (int) val('SELECT COUNT(*) FROM users WHERE active = 1'),
+                    'requested' => (int) val("SELECT COUNT(*) FROM configurations WHERE status = 'requested'"),
+                    'leads_new' => (int) val("SELECT COUNT(*) FROM leads WHERE work_status = 'nuevo'"),
+                    'pending' => (int) val("SELECT COUNT(*) FROM configurations WHERE status IN ('accepted','requested') AND work_status IN ('nuevo','en_curso')")],
                 'latest' => config_list(['kind' => 'user', 'user' => $u], [], 1, 8)['items'],
+                'adri' => adri_status(),
             ]);
             return;
         }
@@ -205,7 +222,7 @@ function admin_handle(string $path, string $method): void
 
         // ---- configuraciones
         $viewer = ['kind' => 'user', 'user' => $u];
-        $filters = array_intersect_key($_GET, ['status' => 1, 'from' => 1, 'to' => 1, 'q' => 1, 'user_id' => 1]);
+        $filters = array_intersect_key($_GET, ['status' => 1, 'from' => 1, 'to' => 1, 'q' => 1, 'user_id' => 1, 'work_status' => 1, 'pendientes' => 1]);
         if ($path === '/configuraciones' && !$post) {
             try { $list = config_list($viewer, $filters, max(1, (int) ($_GET['page'] ?? 1)), 25); }
             catch (UcError $ex) { flash($ex->getMessage(), 'error'); $filters = []; $list = config_list($viewer, [], 1, 25); }
@@ -224,9 +241,20 @@ function admin_handle(string $path, string $method): void
             audit('config.export', count($views) . ' configuraciones (CSV)');
             return;
         }
-        if ($match('/configuraciones/(UC-[A-Z0-9]{8})(\.json|\.csv|-despiece\.csv|-corte\.csv|/anular)?')) {
+        if ($match('/configuraciones/(UC-[A-Z0-9]{8})(\.json|\.csv|-despiece\.csv|-corte\.csv|/anular|/trabajo|/aceptar)?')) {
             $code = $m[1];
             $ext = $m[2] ?? '';
+            if ($post && $ext === '/trabajo') {
+                try { config_mark($code, $viewer, ['work_status' => (string) ($_POST['work_status'] ?? ''), 'work_note' => (string) ($_POST['work_note'] ?? '')]); }
+                catch (UcError $ex) { admin_back("/configuraciones/$code", $ex); }
+                flash(t('Estado de trabajo guardado.'));
+                admin_back("/configuraciones/$code");
+            }
+            if ($post && $ext === '/aceptar') {
+                try { config_accept($code, $viewer); } catch (UcError $ex) { admin_back("/configuraciones/$code", $ex); }
+                flash(t('Configuración aceptada.'));
+                admin_back("/configuraciones/$code");
+            }
             if ($post && $ext === '/anular') {
                 config_cancel($code, $viewer);
                 flash(t('Configuración anulada.'));
@@ -237,8 +265,25 @@ function admin_handle(string $path, string $method): void
             if ($ext === '.csv') { admin_download("$code.csv", 'text/csv', config_export_csv([$cfg])); audit('config.export', "$code (CSV)"); return; }
             if ($ext === '-despiece.csv') { admin_download("$code-despiece.csv", 'text/csv', config_export_parts_csv($cfg)); audit('config.export', "$code (despiece CSV)"); return; }
             if ($ext === '-corte.csv') { admin_download("$code-corte.csv", 'text/csv', config_export_cut_csv($cfg)); audit('config.export', "$code (lista de corte CSV)"); return; }
-            admin_render('config_view', '/configuraciones', ['title' => $code, 'cfg' => $cfg, 'cut' => cut_list($cfg)]);
+            $lead = row('SELECT id FROM leads WHERE configuration_id = (SELECT id FROM configurations WHERE code = ?) ORDER BY id DESC LIMIT 1', [$code]);
+            admin_render('config_view', '/configuraciones', ['title' => $code, 'cfg' => $cfg, 'cut' => cut_list($cfg), 'adri' => adri_status(),
+                'lead' => $lead ? lead_get((int) $lead['id'], $viewer) : null]);
             return;
+        }
+
+        // ---- leads (lo que deja el cliente final con «Quiero este presupuesto»)
+        if ($path === '/leads' && !$post) {
+            $lf = array_intersect_key($_GET, ['estado' => 1, 'work_status' => 1, 'q' => 1]);
+            try { $leads = lead_list($viewer, $lf, max(1, (int) ($_GET['page'] ?? 1)), 25); }
+            catch (UcError $ex) { flash($ex->getMessage(), 'error'); $lf = []; $leads = lead_list($viewer, [], 1, 25); }
+            admin_render('leads', '/leads', ['title' => t('Leads'), 'leads' => $leads, 'filters' => $lf]);
+            return;
+        }
+        if ($post && $match('/leads/(\d+)')) {
+            try { lead_mark((int) $m[1], $viewer, ['estado' => (string) ($_POST['estado'] ?? ''), 'work_status' => (string) ($_POST['work_status'] ?? ''), 'work_note' => (string) ($_POST['work_note'] ?? '')]); }
+            catch (UcError $ex) { admin_back('/leads', $ex); }
+            flash(t('Lead #{id} guardado.', ['id' => (int) $m[1]]));
+            admin_back('/leads' . (isset($_POST['back']) && preg_match('#^\?[a-z0-9_=&%-]*$#i', (string) $_POST['back']) ? (string) $_POST['back'] : ''));
         }
 
         // ---- personas

@@ -464,3 +464,38 @@ body:not(:has(.totalbar)) .foot { padding-bottom: var(--space-5); }
   .tree-actions { flex: none; } .tree-actions .icon-btn { width: 34px; min-width: 34px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Panel v0.3: leads, estado de trabajo y Adri */
+.badge-requested { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+.work-badge.work-nuevo { background: #FFF7ED; border-color: #FED7AA; color: #C2410C; }
+.work-badge.work-en_curso { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+.work-badge.work-hecho { background: var(--ok-soft); border-color: #A7F3D0; color: var(--ok); }
+.clip { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-hot { border-color: #FED7AA; background: linear-gradient(180deg, #FFF7ED, var(--surface)); }
+.side-block { border-top: 1px solid var(--line); margin-top: var(--space-4); padding-top: var(--space-4); }
+.side-block h3 { margin: 0 0 var(--space-2); color: var(--text); font-size: .95rem; }
+.adri-action { display: grid; gap: 4px; margin-bottom: var(--space-3); }
+.adri-action .btn { justify-self: start; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.adri-on { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; background: var(--ok-soft); color: var(--ok); border: 1px solid #A7F3D0; border-radius: 999px; padding: 6px 14px; font-size: .9rem; font-weight: 600; margin: 0 0 var(--space-5); }
+.dot-on { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px #D1FAE5; }
+.adri-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: var(--space-5); align-items: center; margin-bottom: var(--space-6);
+  background: radial-gradient(120% 140% at 100% 0%, #EEF2FF 0%, var(--surface) 55%); border-color: var(--accent-line); }
+.adri-card h2 { font-size: clamp(1.2rem, 1rem + 1vw, 1.6rem); letter-spacing: -0.02em; }
+.adri-samples { margin: 0; display: grid; grid-template-columns: 1fr 1.45fr 1fr; gap: 10px; align-items: end; }
+.adri-samples img { width: 100%; height: auto; border-radius: 8px; background: #fff; box-shadow: 0 14px 30px -20px rgba(15, 23, 42, .5), 0 0 0 1px var(--line); }
+.adri-samples figcaption { grid-column: 1 / -1; text-align: right; }
+.lead-list { display: grid; gap: var(--space-3); }
+.lead-card { border-left: 4px solid var(--line); }
+.lead-card.work-nuevo { border-left-color: #F97316; }
+.lead-card.work-en_curso { border-left-color: var(--accent); }
+.lead-card.work-hecho { border-left-color: var(--ok); }
+.lead-top { display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.lead-name { font-size: 1.05rem; margin-right: 8px; }
+.lead-contact { margin: 4px 0 0; }
+.lead-cfg { text-align: right; }
+.lead-msg { margin: var(--space-2) 0 0; color: var(--text-2); font-style: italic; }
+.lead-form-row { margin-top: var(--space-3); }
+.lead-form-row .grow { flex: 1 1 260px; }
+.lead-form-row select, .lead-form-row input { margin-top: 6px; }
+@media (max-width: 860px) { .adri-card { grid-template-columns: 1fr; } }
