@@ -30,22 +30,22 @@ function uc_update_uid(): int
     return function_exists('posix_geteuid') ? posix_geteuid() : -1;
 }
 
-/** La actualización la termina el mismo usuario que la lanzó, o root (`sudo php bin/uc update:finish`). */
+/**
+ * ¿Puede este usuario terminar la actualización? Root, nunca (cargaría lo que el servidor web puede escribir). Sin `uid`,
+ * nadie. El mismo usuario que la lanzó, sí. Y la que lanzó root con la 0.3.0 (su manual decía `sudo php bin/uc update`):
+ * la termina el servidor web en la siguiente visita, para no dejar el configurador en mantenimiento.
+ */
 function uc_update_may_finish(array $p, int $uid): bool
 {
-    return !isset($p['uid']) || (int) $p['uid'] === $uid || $uid === 0;
+    return $uid !== 0 && isset($p['uid']) && is_int($p['uid']) && ($p['uid'] === $uid || $p['uid'] === 0);
 }
 
-/** Desde la terminal como root, lo de data/ vuelve al dueño de data/ (el servidor web). */
-function uc_update_chown_data(): void
+/** ¿Archivo normal (no un enlace) y de este mismo usuario? Lo que se lee o ejecuta de data/updates tiene que serlo. */
+function uc_update_own_file(string $f): bool
 {
-    if (PHP_SAPI !== 'cli' || uc_update_uid() !== 0) return;
-    $data = uc_update_data_dir();
-    $owner = @fileowner($data);
-    $group = @filegroup($data);
-    if (!$owner) return;
-    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($data, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
-    foreach ($it as $f) { if (!$f->isLink()) { @chown($f->getPathname(), $owner); @chgrp($f->getPathname(), $group); } }
+    if (!is_file($f) || is_link($f)) return false;
+    $uid = uc_update_uid();
+    return $uid < 0 || @fileowner($f) === $uid;
 }
 
 function uc_update_rmtree(string $dir): void
@@ -71,13 +71,14 @@ function uc_update_finish_entry(): ?string
 {
     $data = uc_update_data_dir();
     $pf = "$data/updates/pending.json";
-    if (!is_file($pf)) return null;
+    if (is_link("$data/updates") || !uc_update_own_file($pf)) return null;
     $p = json_decode((string) @file_get_contents($pf), true);
-    if (is_array($p) && !uc_update_may_finish($p, uc_update_uid())) return null;
+    if (!is_array($p) || !uc_update_may_finish($p, uc_update_uid())) return null;
     $lock = uc_update_lock_open("$data/updates/finish.lock");
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return null;
     $p = json_decode((string) @file_get_contents($pf), true);
-    if (!is_array($p) || !preg_match('/^[0-9a-z.-]+$/', (string) ($p['id'] ?? ''))) { flock($lock, LOCK_UN); return null; }
+    if (!uc_update_own_file($pf) || !is_array($p) || !uc_update_may_finish($p, uc_update_uid()) || !preg_match('/^[0-9a-z][0-9a-z.-]*$/', (string) ($p['id'] ?? ''))
+        || is_link("$data/updates/{$p['id']}")) { flock($lock, LOCK_UN); return null; }
     if (($p['stage'] ?? '') === 'swapping') {
         // El proceso que cambiaba los archivos murió a mitad: si ya no tiene el cerrojo, se deshace (la base no se tocó).
         $ul = uc_update_lock_open("$data/updates/update.lock");
@@ -123,7 +124,8 @@ function uc_update_finish_shutdown(): void
         $why = $err['message'] . ' (' . str_replace(dirname(__DIR__) . '/', '', (string) $err['file']) . ':' . $err['line'] . ')';
     }
     if ($why === '') $why = 'la versión nueva no terminó de arrancar';
-    if (is_file("$dir/rollback.php")) require_once "$dir/rollback.php";
+    // La vuelta atrás guardada del código viejo, solo si es un archivo normal de este mismo usuario; si no, la instalada.
+    if (uc_update_own_file("$dir/rollback.php")) require_once "$dir/rollback.php";
     $fn = function_exists('uc_update_prev_rollback') ? 'uc_update_prev_rollback' : null;
     if ($fn === null) { require_once __DIR__ . '/update_rollback.php'; $fn = 'uc_update_rollback'; }
     $res = $fn($dir, dirname(__DIR__), $data, empty($GLOBALS['uc_update_no_db']));
@@ -134,7 +136,6 @@ function uc_update_finish_shutdown(): void
         'error' => mb_substr((string) preg_replace('/\s+/', ' ', $why), 0, 600), 'rollback' => $res,
         'message' => "La actualización a la {$p['to']} ha fallado y el configurador ha vuelto solo a la {$p['from']}, con sus datos tal cual estaban. Motivo: " . mb_substr($why, 0, 300)]);
     if (!empty($GLOBALS['uc_update_lock'])) @flock($GLOBALS['uc_update_lock'], LOCK_UN);
-    uc_update_chown_data();
     if (PHP_SAPI === 'cli') { fwrite(STDERR, "La actualización falló y se ha vuelto a la {$p['from']}. Motivo: $why\n"); return; }
     if (!headers_sent()) {
         while (ob_get_level()) ob_end_clean();

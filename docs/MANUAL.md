@@ -260,10 +260,10 @@ qué (configuraciones, catálogo, personas, ajustes, copias, actualizaciones).
 - **Subir una copia**: un `.zip` (o `.ucbk` con su contraseña). Se comprueba entera; con RESTAURAR se restaura al
   momento.
 - **Copias automáticas**: una al día o una a la semana, guardando las N más nuevas (7 por defecto). Se hacen tras una
-  visita (con PHP-FPM) o con cron: `php bin/uc backup --auto`.
+  visita (con PHP-FPM) o con cron del usuario del servidor web: `sudo -u www-data php bin/uc backup --auto`.
 
-Desde el servidor: `php bin/uc backup`, `php bin/uc backups` y `php bin/uc restore <copia.zip> --yes`. Las copias
-están en `data/backups`. Si prefieres copiar a mano, copia la carpeta `data/` entera **con la aplicación parada** (o
+Desde el servidor, como el usuario del servidor web (`sudo -u www-data php bin/uc …`, nunca como root): `backup`,
+`backups` y `restore <copia.zip> --yes`. Las copias están en `data/backups`. Si prefieres copiar a mano, copia la carpeta `data/` entera **con la aplicación parada** (o
 usa `bin/uc backup`, que copia la base de forma segura aunque esté en uso).
 
 ![Copias de seguridad](capturas/panel-copias-escritorio.png)
@@ -278,8 +278,14 @@ usa `bin/uc backup`, que copia la base de forma segura aunque esté en uso).
   el paquete es oficial (firma y huella), pone «Volvemos en un momento», cambia el código (nunca tus datos), pone al día
   la base y comprueba que todo arranca. **Si algo falla, vuelve sola a la versión anterior**, con tus datos tal cual.
 - **Volver a la versión anterior**: tras una actualización, puedes deshacerla (solo el código; tus datos se conservan).
-- Si el servidor no deja escribir el código (así lo deja el instalador por seguridad) o la instalación es una copia
-  de Git, el panel lo dice: actualiza desde la terminal con `sudo php bin/uc update --yes`.
+- Si el servidor no deja escribir el código (así lo deja el instalador por seguridad), el panel lo dice. Entonces:
+  descarga la versión nueva de GitHub con su `.sha256`, compruébala (`sha256sum -c`) y, desde su carpeta, ejecuta
+  `sudo ./install.sh`: cambia el código y no toca tus datos. Si la instalación es una copia de Git, actualízala con git.
+- Si el código sí es del usuario del servidor web, también se puede desde la terminal:
+  `sudo -u www-data php bin/uc update --yes`.
+- **Nunca ejecutes `bin/uc` como root** (con `sudo php bin/uc …`): se niega, porque cargaría archivos de `data/` que
+  el servidor web puede cambiar. Usa siempre `sudo -u www-data php bin/uc …` (salvo `install`, que si lo lanzas como
+  root pasa él solo al dueño de `data/`).
 
 ![Actualizaciones](capturas/panel-actualizaciones-escritorio.png)
 
@@ -300,7 +306,7 @@ usa `bin/uc backup`, que copia la base de forma segura aunque esté en uso).
   (se está poniendo al día la base). Recarga en unos segundos.
 - «Volvemos en un momento» es el modo mantenimiento durante una restauración o una actualización; dura uno o dos
   minutos. Si un proceso se cortara a mitad, el aviso caduca solo; si era una actualización, la siguiente visita la
-  termina o la deshace, y desde el servidor `php bin/uc update:finish` hace lo mismo.
+  termina o la deshace, y desde el servidor `sudo -u www-data php bin/uc update:finish` hace lo mismo.
 
 **«No es una medida válida».** La medida no cae en ningún tramo del módulo (o está fuera de su mínimo o máximo). El
 aviso dice qué tramos hay: toca uno de los botones de tramos o escribe una medida dentro. Una medida **entre** dos

@@ -39,11 +39,12 @@ $installed = $version();
 
 $env = ['UC_DATA' => $data, 'UC_PASSWORD' => 'admin-12345'];
 $run = function (array $args, array $extra = []) use ($php, $root, $env): array {
-    $p = proc_open(array_merge([$php, "$root/bin/uc"], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $root, $env + $extra + ['PATH' => getenv('PATH')]);
+    $p = proc_open(as_web_user(array_merge([$php, "$root/bin/uc"], $args)), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $root, $env + $extra + ['PATH' => getenv('PATH')]);
     $out = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
     return [proc_close($p), $out];
 };
-$sql = function (string $q) use ($data) { $pdo = new PDO("sqlite:$data/configurator.sqlite"); $r = $pdo->query($q); return $r ? $r->fetchAll(PDO::FETCH_NUM) : []; };
+$sql = function (string $q) use ($data) { $pdo = new PDO("sqlite:$data/configurator.sqlite"); $r = $pdo->query($q); $rows = $r ? $r->fetchAll(PDO::FETCH_NUM) : []; $r = $pdo = null; chown_to_web_user($data); return $rows; };
+chown_to_web_user($base); // como root (docker -u 0), la aplicación corre como el servidor web, igual que en un servidor de verdad
 [$rc] = $run(['install', '--empresa=Prueba', '--email=a@x.test', '--url=http://127.0.0.1', '--sample']);
 check('la copia de pruebas se instala con los datos de ejemplo', fn() => eq(0, $rc) && eq(true, (int) $sql('SELECT COUNT(*) FROM nodes')[0][0] > 0));
 $nodes = $sql('SELECT id, name FROM nodes ORDER BY id');
@@ -132,7 +133,7 @@ check('tras la vuelta atrás, la aplicación arranca y responde', function () us
 // --- 5. desde el panel: la fase 1 en una petición y la fase 2 en la SIGUIENTE petición web (public/index.php)
 $phase1 = function () use ($php, $root, $env, $feed): array {
     $code = 'require "app/bootstrap.php"; Actor::set("panel"); try { $r = update_run_remote("admin"); echo "OK ", $r["to"]; } catch (Throwable $e) { echo "ERR ", $e->getMessage(); }';
-    $p = proc_open([$php, '-r', $code], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $root, $env + $feed + ['PATH' => getenv('PATH')]);
+    $p = proc_open(as_web_user([$php, '-r', $code]), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $root, $env + $feed + ['PATH' => getenv('PATH')]);
     $o = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
     return [proc_close($p), $o];
 };
@@ -140,7 +141,7 @@ $web = function () use ($php, $root, $data): array {
     $port = 0; $srv = null;
     for ($t = 0; $t < 20 && !$port; $t++) {
         $cand = random_int(20000, 60000);
-        $srv = proc_open([$php, '-S', "127.0.0.1:$cand", '-t', "$root/public", "$root/public/index.php"], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pp, $root, ['UC_DATA' => $data, 'PATH' => getenv('PATH')]);
+        $srv = proc_open(as_web_user([$php, '-S', "127.0.0.1:$cand", '-t', "$root/public", "$root/public/index.php"]), [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pp, $root, ['UC_DATA' => $data, 'PATH' => getenv('PATH')]);
         for ($i = 0; $i < 30; $i++) { usleep(100000); if (@fsockopen('127.0.0.1', $cand)) { $port = $cand; break; } }
         if (!$port) proc_terminate($srv);
     }

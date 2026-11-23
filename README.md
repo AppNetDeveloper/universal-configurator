@@ -62,7 +62,9 @@ para empezar con tres familias de ejemplo —cocinas (recta, en L y paralela), a
 (mueble de lavabo suspendido y columna)— con sus acabados, 16 tipos de módulo con medidas reales, tramos, despiece e
 ilustraciones; también se cargan después desde **Panel → Ajustes**.
 
-**Desde la línea de órdenes** (como el usuario de PHP):
+**Desde la línea de órdenes**, siempre como el usuario del servidor web (`sudo -u www-data php bin/uc …`). **Nunca como
+root**: `bin/uc` se niega, porque cargaría archivos de `data/` que el servidor web puede cambiar (`install` lanzado como
+root pasa solo al dueño de `data/`):
 
 ```bash
 UC_PASSWORD='…' php bin/uc install --empresa="Mi empresa" --email=yo@miempresa.com --url=https://configurador.miempresa.com --sample

@@ -20,6 +20,9 @@ declare(strict_types=1);
 //   update:finish                  termina (o deshace) una actualización pendiente
 
 if (PHP_SAPI !== 'cli') exit(1);
+// Nunca como root: lo primero, antes de cargar nada de data/ (install baja al dueño de data/).
+require dirname(__DIR__) . '/app/cli_guard.php';
+if (($why = uc_cli_drop_root((string) ($argv[1] ?? ''))) !== null) { fwrite(STDERR, "Error: $why\n"); exit(1); }
 // Terminar una actualización se hace ANTES de cargar la aplicación (el código acaba de cambiar).
 if (($argv[1] ?? '') === 'update:finish') {
     require dirname(__DIR__) . '/app/update_finish.php';

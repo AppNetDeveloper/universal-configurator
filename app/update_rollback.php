@@ -46,7 +46,7 @@ if (!function_exists('uc_update_rollback')) {
             if (@unlink("$root/$rel")) $out['removed']++; else $out['errors'][] = "No se pudo borrar $rel";
         }
         $code = "$dir/code";
-        if (is_dir($code)) {
+        if (is_dir($code) && !is_link($code) && !is_link($dir)) {
             $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($code, FilesystemIterator::SKIP_DOTS));
             foreach ($it as $f) {
                 if (!$f->isFile() || $f->isLink()) continue;

@@ -167,7 +167,7 @@ function update_can_write(): array
 {
     foreach (['app', 'app/core.php', 'public', 'public/index.php', 'bin'] as $rel) {
         $f = UC_ROOT . '/' . $rel;
-        if (file_exists($f) && !is_writable($f)) return [false, t('El servidor web no puede escribir en el código ({r}): así lo deja el instalador por seguridad. Actualiza desde la terminal: sudo php bin/uc update --yes', ['r' => $rel])];
+        if (file_exists($f) && !is_writable($f)) return [false, t('El servidor web no puede escribir en el código ({r}): así lo deja el instalador, por seguridad. Para actualizar, descarga la versión nueva (con su .sha256) y, desde su carpeta, ejecuta sudo ./install.sh: cambia el código y no toca los datos. Nunca ejecutes bin/uc como root.', ['r' => $rel])];
     }
     if (!is_writable(UC_DATA)) return [false, t('No se puede escribir en la carpeta de datos.')];
     if (is_dir(UC_ROOT . '/.git')) return [false, t('Esta instalación es una copia de Git: actualízala con git (la etiqueta de la versión nueva), así no se pisa tu copia de trabajo.')];
@@ -293,7 +293,6 @@ function update_install_package(string $envelopeRaw, string $zipFile, string $by
     } finally {
         bk_rmtree(!empty($failed) ? $work : "$work/new");
         flock($lock, LOCK_UN);
-        uc_update_chown_data();
     }
 }
 
@@ -336,7 +335,6 @@ function update_finish_after_boot(array $p): void
     $st['latest'] = null;
     update_state_save($st);
     foreach (glob($dir . '/*', GLOB_ONLYDIR) ?: [] as $d) if (basename($d) !== $p['id']) bk_rmtree($d); // se guarda la última, para volver atrás
-    uc_update_chown_data();
 }
 
 /** Volver a la versión anterior desde la copia de la última actualización (solo el código; los datos se conservan). */

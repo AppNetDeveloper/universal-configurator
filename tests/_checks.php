@@ -41,3 +41,19 @@ function done(): never
     exit($f ? 1 : 0);
 }
 
+
+/** Como root, las órdenes de la aplicación se lanzan como el servidor web (bin/uc se niega a correr como root). */
+function as_web_user(array $cmd): array
+{
+    if (!function_exists('posix_geteuid') || posix_geteuid() !== 0 || !posix_getpwnam('www-data')) return $cmd;
+    return ['su', '-s', '/bin/sh', 'www-data', '-c', 'exec ' . implode(' ', array_map('escapeshellarg', $cmd))];
+}
+
+/** Como root, deja $path (y lo que haya dentro) del servidor web, para que las órdenes lanzadas con as_web_user() puedan escribir. */
+function chown_to_web_user(string $path): void
+{
+    if (!function_exists('posix_geteuid') || posix_geteuid() !== 0 || !($pw = posix_getpwnam('www-data'))) return;
+    if (!file_exists($path) && !is_link($path)) return;
+    @lchown($path, $pw['uid']); @lchgrp($path, $pw['gid']);
+    if (is_dir($path) && !is_link($path)) foreach (scandir($path) as $f) if ($f !== '.' && $f !== '..') chown_to_web_user("$path/$f");
+}
