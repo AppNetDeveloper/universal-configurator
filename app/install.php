@@ -79,18 +79,47 @@ function uc_install(array $in): int
     return $id;
 }
 
+function install_code_file(): string
+{
+    return UC_DATA . '/install-code.txt';
+}
+
+/**
+ * Código de instalación de un solo uso: mientras no existe data/config.php cualquiera podría abrir el instalador web
+ * y crear el administrador. Con el código (que solo puede leer quien entra al servidor) solo instala el dueño.
+ */
+function install_code(): string
+{
+    $f = install_code_file();
+    if (!is_file($f)) {
+        $alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+        $code = '';
+        for ($i = 0; $i < 12; $i++) $code .= ($i && $i % 4 === 0 ? '-' : '') . $alphabet[random_int(0, strlen($alphabet) - 1)];
+        $old = umask(0077);
+        install_write_atomic($f, $code . "\n");
+        umask($old);
+        @chmod($f, 0600);
+    }
+    return trim((string) file_get_contents($f));
+}
+
 /** Instalador web: todas las rutas llevan aquí hasta que exista data/config.php. */
 function install_handle(string $path, string $method): void
 {
     if ($path !== '/install' && !str_starts_with($path, '/assets/')) redirect('/install');
     session_start_safe();
     $errors = [];
+    if (is_dir(UC_DATA) && is_writable(UC_DATA)) install_code();
     if ($method === 'POST') {
+        $given = strtoupper(preg_replace('/\s+/', '', (string) ($_POST['install_code'] ?? '')));
         if (!csrf_valid((string) ($_POST['_csrf'] ?? ''))) {
             $errors[] = t('La sesión ha caducado: vuelve a enviar el formulario.');
+        } elseif (!is_file(install_code_file()) || !hash_equals(install_code(), $given)) {
+            $errors[] = t('El código de instalación no es correcto. Está en el servidor, en {f} (por ejemplo: cat {f}).', ['f' => install_code_file()]);
         } else {
             try {
                 $id = uc_install($_POST);
+                @unlink(install_code_file());
                 session_login(user_by_id($id));
                 flash(t('Instalación terminada. Bienvenido al panel.'));
                 redirect('/admin');
@@ -103,7 +132,7 @@ function install_handle(string $path, string $method): void
     header('Cache-Control: no-store');
     echo render_template(UC_ROOT . '/app/views/install.php', ['checks' => install_requirements(), 'ok' => install_requirements_ok(), 'errors' => $errors,
         'values' => array_diff_key($_POST, ['admin_password' => 1, '_csrf' => 1]), 'timezones' => timezone_identifiers_list(),
-        'proposedUrl' => base_url()]); // solo se PROPONE (la persona la confirma); lo que se guarda es lo que envía el formulario
+        'proposedUrl' => base_url(), 'codeFile' => install_code_file()]); // solo se PROPONE (la persona la confirma); lo que se guarda es lo que envía el formulario
 }
 
 // ---------------------------------------------------------------- datos de ejemplo

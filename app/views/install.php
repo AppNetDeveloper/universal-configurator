@@ -1,5 +1,5 @@
 <?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
-<?php /** @var array $checks @var bool $ok @var array $errors @var array $values @var array $timezones @var string $proposedUrl */
+<?php /** @var array $checks @var bool $ok @var array $errors @var array $values @var array $timezones @var string $proposedUrl @var string $codeFile */
 $v = fn(string $k, string $d = '') => e((string) ($values[$k] ?? $d));
 ?><!doctype html>
 <html lang="es">
@@ -29,6 +29,9 @@ $v = fn(string $k, string $d = '') => e((string) ($values[$k] ?? $d));
   </section>
   <form method="post" action="/install" class="card stack">
     <?= csrf_field() ?>
+    <h2><?= te('Código de instalación') ?></h2>
+    <p class="small muted"><?= te('Para que solo instale quien tiene acceso al servidor, escribe el código que hemos dejado en {f}. Para verlo: cat {f}', ['f' => $codeFile]) ?></p>
+    <label><?= te('Código') ?><input name="install_code" required autocomplete="off" placeholder="XXXX-XXXX-XXXX" class="mono"></label>
     <h2><?= te('Tu empresa') ?></h2>
     <label><?= te('Nombre de la empresa') ?><input name="empresa" required maxlength="120" value="<?= $v('empresa') ?>"></label>
     <label><?= te('URL pública de la aplicación') ?><input name="url" required type="url" value="<?= e((string) ($values['url'] ?? $proposedUrl)) ?>">

@@ -87,8 +87,20 @@ check('el instalador propone la URL actual como dirección pública (obligatoria
 });
 check('instalar con la dirección pública vacía no instala', function () use ($adm, $data) {
     $csrf = Browser::csrf($adm->get('/install')['body']);
-    $r = $adm->post('/install', ['_csrf' => $csrf, 'empresa' => 'X', 'admin_name' => 'A', 'admin_email' => 'a@x.test', 'admin_password' => 'secreta123', 'url' => '']);
+    $r = $adm->post('/install', ['_csrf' => $csrf, 'install_code' => trim((string) file_get_contents("$data/install-code.txt")), 'empresa' => 'X', 'admin_name' => 'A', 'admin_email' => 'a@x.test', 'admin_password' => 'secreta123', 'url' => '']);
     return eq(200, $r['status']) && eq(true, str_contains($r['body'], 'URL pública')) && eq(false, is_file("$data/config.php"));
+});
+check('el instalador pide un código de un solo uso y dice dónde está (data/install-code.txt)', function () use ($adm, $data) {
+    $b = $adm->get('/install')['body'];
+    return eq(true, str_contains($b, 'install-code.txt') && str_contains($b, 'name="install_code"')) && eq(true, is_file("$data/install-code.txt"))
+        && eq('600', substr(sprintf('%o', fileperms("$data/install-code.txt")), -3));
+});
+check('sin el código (o con uno falso) no se instala', function () use ($adm, $data) {
+    $csrf = Browser::csrf($adm->get('/install')['body']);
+    $base = ['_csrf' => $csrf, 'empresa' => 'X', 'admin_name' => 'A', 'admin_email' => 'a@x.test', 'admin_password' => 'secreta123', 'url' => $GLOBALS['BASE']];
+    $r1 = $adm->post('/install', $base);
+    $r2 = $adm->post('/install', $base + ['install_code' => 'AAAA-BBBB-CCCC']);
+    return eq(true, str_contains($r1['body'], 'código de instalación') && str_contains($r2['body'], 'código de instalación')) && eq(false, is_file("$data/config.php"));
 });
 check('instalar sin CSRF no instala', function () use ($adm, $data) {
     $adm->post('/install', ['empresa' => 'X', 'admin_name' => 'A', 'admin_email' => 'a@x.test', 'admin_password' => 'secreta123']);
@@ -96,9 +108,10 @@ check('instalar sin CSRF no instala', function () use ($adm, $data) {
 });
 check('instalar crea config.php, la base, el admin y los datos de ejemplo', function () use ($adm, $data) {
     $csrf = Browser::csrf($adm->get('/install')['body']);
-    $r = $adm->post('/install', ['_csrf' => $csrf, 'empresa' => 'Cocinas Demo', 'timezone' => 'Europe/Madrid', 'admin_name' => 'Admin',
+    $r = $adm->post('/install', ['_csrf' => $csrf, 'install_code' => trim((string) file_get_contents("$data/install-code.txt")), 'empresa' => 'Cocinas Demo', 'timezone' => 'Europe/Madrid', 'admin_name' => 'Admin',
         'admin_email' => 'admin@demo.test', 'admin_password' => 'admin-12345', 'sample' => '1', 'url' => $GLOBALS['BASE']]);
-    return eq(303, $r['status']) && eq('/admin', loc($r)) && eq(true, is_file("$data/config.php")) && eq(true, is_file("$data/configurator.sqlite"));
+    return eq(303, $r['status']) && eq('/admin', loc($r)) && eq(true, is_file("$data/config.php")) && eq(true, is_file("$data/configurator.sqlite"))
+        && eq(false, is_file("$data/install-code.txt"), 'el código se borra al usarlo');
 });
 check('tras instalar, /install ya no instala', fn() => eq(true, $adm->get('/install')['status'] !== 200 || !str_contains($adm->get('/install')['body'], 'admin_password')));
 
