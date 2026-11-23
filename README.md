@@ -6,13 +6,15 @@ Universal Web.
 
 - El **administrador** carga un catálogo en árbol (p. ej. Cocina → Modelo → Color), los **tipos de módulo** con su
   **tabla de precios por tramos de medida** (de 41 a 60 cm = X €; no se cobra por centímetro) y la **composición por
-  defecto** de cada modelo (paredes con sus módulos).
+  defecto** de cada modelo (paredes con sus módulos). Cada tipo lleva sus **medidas reales** (ancho, alto, fondo,
+  tablero y trasera) y su **despiece por fórmulas** (laterales, base, trasera, puertas, cajones…).
 - Un **comercial**, un **cliente** o un **invitado** (si se permite) elige en la tablet hasta un nodo final, ajusta el
-  ancho de cada módulo, lo quita, lo sustituye o añade otros, ve el total sin IVA al momento y acepta. Al aceptar, el
+  ancho de cada módulo (admite un decimal: 58,5 cm), lo quita, lo sustituye o añade otros, ve el total sin IVA al momento y acepta. Al aceptar, el
   precio queda **congelado**: si luego cambia la tarifa, lo aceptado no cambia.
 - El administrador ve todas las configuraciones y las descarga en **JSON** y **CSV**.
 - **ADRI** (u otra IA) se conecta por **MCP** y lee o cambia configuraciones con sus medidas exactas para hacer fuera lo
-  pesado: plano CAD acotado, PDF profesional, seguimiento. La aplicación no dibuja planos.
+  pesado: plano CAD acotado del módulo y de sus piezas (medidas en mm y despiece), PDF profesional, seguimiento. La
+  aplicación no dibuja planos. Manual del MCP para la IA: [`docs/MCP.md`](docs/MCP.md).
 
 El diseño completo (datos, reglas, acceso, pantallas, MCP) está en [`docs/DISENO.md`](docs/DISENO.md).
 
@@ -32,7 +34,8 @@ sudo ./install.sh --domain=configurador.miempresa.com --email=yo@miempresa.com -
 
 **En cualquier servidor con PHP**: copia la carpeta, apunta el dominio a `public/` (ver `deploy/nginx.example`,
 `deploy/apache.example` o `deploy/caddy.example`) y abre la dirección en el navegador: el instalador comprueba los
-requisitos y crea `data/config.php`, la base de datos y la cuenta de administración. Marca «Cargar datos de ejemplo»
+requisitos y crea `data/config.php`, la base de datos y la cuenta de administración. Para que solo instale quien tiene
+acceso al servidor, pide un **código de un solo uso** que deja en `data/install-code.txt` (`cat data/install-code.txt`). Marca «Cargar datos de ejemplo»
 para empezar con una cocina de 3 modelos (recta, en L y paralela), 4 colores y 9 tipos de módulo; también se cargan
 después desde **Panel → Ajustes**.
 
@@ -74,9 +77,13 @@ enlace para poner su contraseña (y el panel lo enseña por si el correo no sale
 | `config_list` | read | Configuraciones con filtros (estado, desde, hasta, texto), paginadas |
 | `config_get` | read | Una configuración entera: nodo, cliente, paredes con geometría (mm), módulos (cm), tramo y precio por línea, total |
 | `price_check` | read | Precio de una lista de módulos para un nodo, sin guardar (y qué medida no es válida) |
-| `config_create` | write | Borrador desde un nodo final con su composición por defecto (o `copy_of` para duplicar) |
+| `config_create` | write | Borrador desde un nodo final con su composición por defecto, con `customer` opcional (o `copy_of` para duplicar) |
 | `config_update` | write | Cambios en un borrador: `set_width`, `remove`, `add`, `replace`, `customer` (todos o ninguno) |
-| `config_accept` | write | Acepta un borrador y congela su precio. La aceptación la debe confirmar la persona |
+| `config_accept` | write | Acepta un borrador y congela su precio y su despiece. La aceptación la debe confirmar la persona |
+| `cut_list` | read | Lista de corte agregada (piezas iguales sumadas por espesor y medidas, con su módulo de origen) |
+
+Para dibujar en CAD: `config_get` (medidas en mm y despiece de cada módulo) o `cut_list`. El precio y las piezas los
+calcula siempre la aplicación. Un parámetro que la herramienta no conoce es un error, nunca se ignora.
 
 `initialize` devuelve las instrucciones con el flujo recomendado. Los errores dicen qué falló (con el valor recibido),
 qué vale, un ejemplo de llamada y «No se ha hecho nada». Todo queda en **Panel → Actividad**.
@@ -90,13 +97,16 @@ curl -s https://configurador.miempresa.com/mcp -H "Authorization: Bearer uc_…"
 
 ## Reglas de precio (resumen)
 
-- Anchos en **centímetros enteros**. Cada tipo de módulo tiene tramos `[desde, hasta]` (ambos incluidos) sin solapes.
+- Anchos en **cm con un decimal** (58,5), guardados en mm enteros. Cada tipo de módulo tiene tramos `[desde, hasta]`
+  (ambos incluidos, bordes con un decimal) sin solapes. Un ancho fuera del mínimo/máximo del tipo no es válido.
 - Una medida que no cae en ningún tramo **no es válida**: se rechaza diciendo qué tramos hay.
 - Un nodo (p. ej. un modelo) puede tener tramos propios de un tipo: **sustituyen** a los generales en ese nodo y sus
   hijos (manda el antepasado más cercano que tenga tramos de ese tipo).
 - Total = suma de módulos, en EUR **sin IVA**. El IVA se muestra aparte. El cálculo está en una sola función del
   servidor (`precio_configuracion()` en `app/pricing.php`); la tablet nunca calcula precios.
-- Importes guardados en céntimos enteros; la API y el MCP los dan en euros con 2 decimales (y `*_cents`).
+- Importes guardados en céntimos enteros; la API y el MCP los dan en euros con 2 decimales (y `*_cents` y `*_text`).
+- Despiece: fórmulas con W, H, D (mm), T (tablero) y B (trasera), con un intérprete propio (sin `eval`); piezas en mm
+  redondeadas a 0,5 mm. Al aceptar se congela también el despiece.
 
 ## Pruebas
 
