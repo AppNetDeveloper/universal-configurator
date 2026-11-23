@@ -111,7 +111,7 @@ php tests/pricing.php      # una sola
 
 ## Traducir
 
-Todos los textos pasan por `t('…')` y se traducen en un único fichero: `app/textos.php`.
+Los textos de las pantallas pasan por `t('frase en español')` y se traducen en un único fichero, `app/textos.php` (la frase en español es la clave). Quedan en claro, sin `t()`, las instrucciones y descripciones del MCP (van dirigidas a la IA) y las etiquetas de requisitos del instalador.
 
 ## Licencia
 

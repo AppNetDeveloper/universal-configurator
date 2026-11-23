@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $rows @var int $page @var int $pages */ ?>
 <div class="page-head"><h1><?= te('Actividad') ?></h1></div>
 <div class="card flush">

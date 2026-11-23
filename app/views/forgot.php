@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <section class="card narrow">
   <h1><?= te('Recuperar contraseña') ?></h1>
   <p class="muted"><?= te('Escribe tu correo y te enviaremos un enlace para poner una contraseña nueva. El enlace vale 1 hora.') ?></p>

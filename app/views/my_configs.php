@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $list */ ?>
 <div class="step-head row-between">
   <h1><?= te('Mis configuraciones') ?></h1>

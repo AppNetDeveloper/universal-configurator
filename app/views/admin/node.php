@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $node @var array $path @var array $children @var ?int $layoutFrom @var int $configs */ ?>
 <nav class="crumbs"><a href="/admin/catalogo"><?= te('Catálogo') ?></a><?php foreach ($path as $p): ?><span>›</span><a href="/admin/catalogo/<?= (int) $p['id'] ?>"><?= e($p['name']) ?></a><?php endforeach; ?></nav>
 <div class="page-head"><h1><?= node_visual($node['image']) ?> <?= e($node['name']) ?></h1>

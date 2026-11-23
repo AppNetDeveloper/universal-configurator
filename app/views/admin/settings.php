@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var bool $catalogEmpty */ $s = fn(string $k) => e(setting($k)); ?>
 <div class="page-head"><h1><?= te('Ajustes') ?></h1></div>
 <?php if ($catalogEmpty): ?>

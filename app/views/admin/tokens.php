@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $tokens @var ?string $newToken @var array $owners @var string $mcpUrl */ ?>
 <div class="page-head"><h1><?= te('Tokens MCP') ?></h1></div>
 <p class="hint"><?= te('Para que ADRI (u otra IA) lea y cambie configuraciones por MCP. El token actúa como la persona elegida: si es comercial, solo ve las suyas. «read» solo lee; «write» además crea, cambia y acepta.') ?></p>

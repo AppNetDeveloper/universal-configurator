@@ -73,12 +73,15 @@ else
   say "Instalación existente: código actualizado, datos intactos."
 fi
 
-say "Configurando Caddy (HTTPS automático) para $DOMAIN…"
-sed -e "s#configurador.example.com#${DOMAIN:-configurador.example.com}#g" -e "s#/var/www/universal-configurator#$APP_DIR#g" \
-    -e "s#unix//run/php/php8.2-fpm.sock#unix/$FPM_SOCK#g" "$APP_DIR/deploy/caddy.example" > /etc/caddy/Caddyfile
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
-systemctl enable caddy >/dev/null 2>&1 || true
-systemctl reload caddy 2>/dev/null || systemctl restart caddy
+# Caddy solo se (re)escribe al instalar o si se pasa --domain: una actualización no toca su configuración.
+if [ $UPDATE -eq 0 ] || [ -n "$DOMAIN" ]; then
+  say "Configurando Caddy (HTTPS automático) para $DOMAIN…"
+  sed -e "s#configurador.example.com#${DOMAIN:-configurador.example.com}#g" -e "s#/var/www/universal-configurator#$APP_DIR#g" \
+      -e "s#unix//run/php/php8.2-fpm.sock#unix/$FPM_SOCK#g" "$APP_DIR/deploy/caddy.example" > /etc/caddy/Caddyfile
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+  systemctl enable caddy >/dev/null 2>&1 || true
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy
+fi
 
 echo
 say "Listo."

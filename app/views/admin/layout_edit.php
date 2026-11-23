@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $node @var array $path @var array $walls @var ?array $inheritedFrom @var array $types @var bool $isFinal */
 $typeOpts = function (?int $sel) use ($types) {
     $h = '';

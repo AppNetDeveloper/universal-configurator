@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <section class="card narrow">
   <h1><?= te('Crear cuenta') ?></h1>
   <form method="post" action="/registro" class="stack">

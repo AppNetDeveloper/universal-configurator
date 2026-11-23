@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php $rowsList = $latest ?? $list['items'] ?? []; ?>
 <?php if (!$rowsList): ?><div class="empty"><p><?= te('No hay configuraciones.') ?></p></div><?php else: ?>
 <div class="card flush">

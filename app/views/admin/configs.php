@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $list @var array $filters @var array $users */
 $f = fn(string $k) => e((string) ($filters[$k] ?? ''));
 $qs = http_build_query(array_filter($filters, fn($v) => $v !== ''));

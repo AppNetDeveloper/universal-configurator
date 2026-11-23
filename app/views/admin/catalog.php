@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $tree */
 $renderTree = function (array $nodes, int $depth) use (&$renderTree) {
     if (!$nodes) return;

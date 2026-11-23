@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $cfg @var array $types */ ?>
 <?= steps_bar(2, $cfg['code']) ?>
 <div class="step-head row-between">

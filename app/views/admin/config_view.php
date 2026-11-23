@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $cfg */ ?>
 <nav class="crumbs"><a href="/admin/configuraciones"><?= te('Configuraciones') ?></a><span>›</span><span class="mono"><?= e($cfg['code']) ?></span></nav>
 <div class="page-head">

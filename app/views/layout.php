@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php
 /** @var string $content @var string $title @var ?array $user @var bool $guest @var array $flashes @var string $section @var bool $wide */
 $empresa = setting('empresa');

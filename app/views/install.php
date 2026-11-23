@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $checks @var bool $ok @var array $errors @var array $values @var array $timezones @var string $proposedUrl */
 $v = fn(string $k, string $d = '') => e((string) ($values[$k] ?? $d));
 ?><!doctype html>

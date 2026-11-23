@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $types */ ?>
 <div class="page-head"><h1><?= te('Tipos de módulo') ?></h1></div>
 <p class="hint"><?= te('Cada tipo tiene su tabla de precios por tramos de medida (de 41 a 60 cm = X €). No se cobra por centímetro.') ?></p>

@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $counts @var array $latest */ ?>
 <div class="page-head"><h1><?= te('Panel') ?></h1><a class="btn btn-primary" href="/configurar"><?= te('Nueva configuración') ?></a></div>
 <div class="stats">

@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var array $type @var array $tiers @var array $nodes */
 $nodeLabel = array_column($nodes, 'label', 'id');
 $nodeOpts = function (?int $sel) use ($nodes) {

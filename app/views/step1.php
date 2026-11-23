@@ -1,3 +1,4 @@
+<?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** @var ?array $parent @var array $path @var array $nodes */ ?>
 <?= steps_bar(1) ?>
 <div class="step-head">
