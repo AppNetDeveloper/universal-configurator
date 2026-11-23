@@ -62,6 +62,15 @@ final class Browser
     }
     public function get(string $p): array { return $this->req('GET', $p); }
     public function post(string $p, array $f): array { return $this->req('POST', $p, $f); }
+    /** POST multipart con un fichero (cuerpo armado a mano: el campo, el nombre y los bytes los decide la prueba). */
+    public function upload(string $p, array $f, string $field, string $filename, string $bytes, string $type): array
+    {
+        $b = '----uc' . bin2hex(random_bytes(8));
+        $body = '';
+        foreach ($f as $k => $v) $body .= "--$b\r\nContent-Disposition: form-data; name=\"$k\"\r\n\r\n$v\r\n";
+        $body .= "--$b\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"$filename\"\r\nContent-Type: $type\r\n\r\n$bytes\r\n--$b--\r\n";
+        return $this->req('POST', $p, $body, ['Content-Type: multipart/form-data; boundary=' . $b]);
+    }
     public function api(string $m, string $p, ?array $json = null, ?string $csrf = null): array
     {
         return $this->req($m, $p, $json === null ? null : json_encode($json), array_merge(['Content-Type: application/json', 'Accept: application/json'], $csrf ? ["X-CSRF-Token: $csrf"] : []));
@@ -165,10 +174,26 @@ check('panel: el aviso de huecos es informativo (se cobra como el tramo siguient
 });
 check('tramo que solapa en el panel: aviso y no se guarda', function () use ($adm, $adminCsrf) {
     $tid = 1;
-    $r = $adm->post("/admin/tipos/$tid/tramo", ['_csrf' => $adminCsrf, 'from_cm' => '35', 'to_cm' => '45', 'price' => '99', 'node_id' => '']);
+    $r = $adm->post("/admin/tipos/$tid/tramo", ['_csrf' => $adminCsrf, 'from_cm' => '35', 'to_cm' => '45', 'price' => '99', 'node_id' => '1']); // los tramos de cocina cuelgan de la raíz «Cocina»
     $page = $adm->get("/admin/tipos/$tid")['body'];
     return eq(303, $r['status']) && eq(true, str_contains($page, 'se solapa'));
 });
+
+check('subir imagen de un nodo: PNG de verdad se guarda y se sirve sin ejecutar nada; SVG con script se rechaza', function () use ($adm, $adminCsrf) {
+    $im = imagecreatetruecolor(8, 8); ob_start(); imagepng($im); $png = (string) ob_get_clean();
+    $r = $adm->upload('/admin/catalogo/2/imagen', ['_csrf' => $adminCsrf], 'imagen', 'foto.png', $png, 'image/png');
+    $page = $adm->get('/admin/catalogo/2')['body'];
+    if (!preg_match('#src="(/media/[a-f0-9]{24}\.png)"#', $page, $m)) throw new RuntimeException('no aparece la imagen subida');
+    $img = $adm->get($m[1]);
+    $svg = $adm->upload('/admin/catalogo/2/imagen', ['_csrf' => $adminCsrf], 'imagen', 'x.svg', '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', 'image/svg+xml');
+    $after = $adm->get('/admin/catalogo/2')['body'];
+    $noCsrf = $adm->upload('/admin/catalogo/2/imagen', [], 'imagen', 'foto.png', $png, 'image/png');
+    return eq(303, $r['status']) && eq(200, $img['status']) && eq(true, str_contains($img['headers'], 'image/png'))
+        && eq(true, str_contains($img['headers'], 'nosniff')) && eq(true, str_contains($img['headers'], 'sandbox'))
+        && eq(303, $svg['status']) && eq(true, str_contains($after, 'Los SVG no se admiten')) && eq(true, str_contains($after, $m[1]))
+        && eq(true, in_array($noCsrf['status'], [403, 419], true));
+});
+check('/media no sirve nada fuera de su carpeta', fn() => eq(404, $adm->get('/media/../uc.sqlite')['status']) && eq(404, $adm->get('/media/abc.php')['status']));
 
 // --- alta de comerciales por invitación
 $invite = function (string $email, string $name) use ($adm, $adminCsrf) {
@@ -196,8 +221,8 @@ check('paso 1: elegir hasta un nodo final crea el borrador', function () use ($a
     $home = $ana->get('/configurar')['body'];
     preg_match('#/configurar\?nodo=(\d+)#', $home, $m1);
     $models = $ana->get('/configurar?nodo=' . $m1[1])['body'];
-    preg_match('#/configurar\?nodo=(\d+)"[^>]*>\s*<span class="node-name">Dúo#s', $models, $m2) || preg_match_all('#/configurar\?nodo=(\d+)#', $models, $m2b);
-    $duo = $m2[1] ?? end($m2b[1]);
+    if (!preg_match('#/configurar\?nodo=(\d+)">(?:(?!</a>).)*?<span class="node-name">Dúo<#s', $models, $m2)) throw new RuntimeException('no aparece Dúo');
+    $duo = $m2[1];
     $colors = $ana->get('/configurar?nodo=' . $duo)['body'];
     preg_match('#name="node_id" value="(\d+)"#', $colors, $m3);
     $r = $ana->post('/configurar', ['_csrf' => Browser::csrf($colors), 'node_id' => $m3[1]]);

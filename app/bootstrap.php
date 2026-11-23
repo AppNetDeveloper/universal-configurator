@@ -12,6 +12,8 @@ require UC_ROOT . '/app/security.php';
 require UC_ROOT . '/app/mail.php';
 require UC_ROOT . '/app/auth.php';
 require UC_ROOT . '/app/auth_providers.php';
+require UC_ROOT . '/app/illustrations.php';
+require UC_ROOT . '/app/media.php';
 require UC_ROOT . '/app/catalog.php';
 require UC_ROOT . '/app/expr.php';
 require UC_ROOT . '/app/pricing.php';
@@ -22,6 +24,7 @@ require UC_ROOT . '/app/api.php';
 require UC_ROOT . '/app/mcp.php';
 require UC_ROOT . '/app/admin.php';
 require UC_ROOT . '/app/install.php';
+require UC_ROOT . '/app/sample.php';
 
 date_default_timezone_set((string) config('timezone', 'Europe/Madrid'));
 mb_internal_encoding('UTF-8');
@@ -43,6 +46,7 @@ function uc_handle_request(): void
     try {
         if (!is_installed()) { install_handle($path, $method); return; }
         if ($path === '/mcp') { mcp_handle($method); return; }
+        if (str_starts_with($path, '/media/')) { media_handle($path); return; }
         if (str_starts_with($path, '/api/')) { api_handle($method, $path); return; }
         session_start_safe();
         security_session_check();

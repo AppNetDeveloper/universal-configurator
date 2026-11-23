@@ -66,6 +66,7 @@ function node_visual(?string $image): string
 {
     if ($image === null || $image === '') return '';
     if (preg_match('/^#[0-9a-fA-F]{6}$/', $image)) return '<span class="swatch" style="background:' . e($image) . '" aria-hidden="true"></span>';
+    if (str_starts_with($image, 'ill:')) { $svg = illustration_from_value($image); return $svg === '' ? '' : '<span class="node-ill">' . $svg . '</span>'; }
     return '<img class="node-img" src="' . e($image) . '" alt="" loading="lazy">';
 }
 

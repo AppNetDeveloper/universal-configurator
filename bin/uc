@@ -7,6 +7,8 @@ declare(strict_types=1);
 //   install --empresa="Mi empresa" --email=admin@x.com [--name=Admin] [--url=https://configurador.x.com] [--timezone=Europe/Madrid] [--sample]
 //            La contraseña llega por la variable UC_PASSWORD o por la entrada estándar (no queda en `ps`).
 //   sample                         carga los datos de ejemplo (solo con el catálogo vacío)
+//   demo                           demostración: datos de ejemplo + 3 comerciales, 4 clientes y 12 configuraciones
+//                                  ficticias (@example.com). Solo para enseñar la app: nunca en una instalación real.
 //   token --name=ADRI --email=persona@x.com [--scopes=read,write]   crea un token MCP y lo muestra UNA vez
 //   reset-link --email=persona@x.com                                 enlace de 72 h para poner la contraseña
 
@@ -36,6 +38,12 @@ try {
             seed_sample();
             $out('Datos de ejemplo cargados.');
             break;
+        case 'demo':
+            if (!is_installed()) $fail('Primero instala.');
+            $d = seed_demo();
+            $out("Demostración cargada: {$d['configs']} configuraciones. Personas (contraseña común: " . DEMO_PASSWORD . "):");
+            foreach ($d['users'] as $u) $out("  {$u['role']}\t{$u['email']}");
+            break;
         case 'token':
             if (!is_installed()) $fail('Primero instala.');
             $u = user_by_email((string) ($opt['email'] ?? '')) ?? $fail('No existe esa persona (--email).');
@@ -47,7 +55,7 @@ try {
             $out(reset_link(password_reset_create((int) $u['id'], INVITE_TTL)));
             break;
         default:
-            $out("Uso: php bin/uc install|sample|token|reset-link [opciones]  (ver la cabecera de bin/uc)");
+            $out("Uso: php bin/uc install|sample|demo|token|reset-link [opciones]  (ver la cabecera de bin/uc)");
             exit($cmd === '' || $cmd === 'help' ? 0 : 1);
     }
 } catch (UcError $ex) {

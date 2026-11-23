@@ -81,8 +81,11 @@ function node_validate(array $in): array
     if ($name === '') throw new UcError(t('Escribe el nombre del nodo.'));
     if (mb_strlen($name) > 120) throw new UcError(t('El nombre es demasiado largo (máximo 120 caracteres).'));
     $image = trim((string) ($in['image'] ?? ''));
-    if ($image !== '' && !preg_match('/^#[0-9a-fA-F]{6}$/', $image) && !preg_match('#^(https?://|/)[^\s"\'<>]+$#', $image)) {
-        throw new UcError(t('Imagen: pon una dirección (https://… o /…) o un color #RRGGBB; recibido «{v}»', ['v' => mb_substr($image, 0, 60)]));
+    // Imagen: color #RRGGBB, ilustración de la app («ill:tipo:#RRGGBB»), imagen subida (/media/…) o una dirección https.
+    $okImage = preg_match('/^#[0-9a-fA-F]{6}$/', $image) || illustration_valid($image)
+        || preg_match('#^/media/[a-f0-9]{24}\.(png|jpg|webp)$#', $image) || preg_match('#^https://[^\s"\'<>]+$#', $image);
+    if ($image !== '' && !$okImage) {
+        throw new UcError(t('Imagen: pon un color #RRGGBB, una ilustración (ill:tipo:#RRGGBB), una imagen subida o una dirección https://…; recibido «{v}»', ['v' => mb_substr($image, 0, 60)]));
     }
     return ['name' => $name, 'description' => trim((string) ($in['description'] ?? '')), 'image' => $image === '' ? null : $image];
 }

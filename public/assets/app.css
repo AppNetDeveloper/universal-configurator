@@ -188,6 +188,14 @@ a.step:hover { border-color: var(--accent-line); color: var(--text); }
 .swatch { display: inline-block; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(15, 23, 42, .14); box-shadow: inset 0 0 0 3px rgba(255,255,255,.55); flex: none; }
 .node-card .swatch { width: 56px; height: 56px; margin-bottom: 6px; }
 .tree-row .swatch, .page-head .swatch, .tree .swatch { width: 20px; height: 20px; box-shadow: none; }
+/* Ilustraciones del catálogo (SVG propio de la app, el acabado como color) */
+.node-ill { display: block; line-height: 0; flex: none; }
+.node-ill svg { width: 100%; height: auto; display: block; }
+.node-card .node-ill { width: 100%; margin: -6px 0 8px; border-radius: var(--r-sm); overflow: hidden; }
+.node-card .node-img { margin-top: -6px; }
+.tree-row .node-ill, .tree .node-ill { width: 48px; } .tree-row .node-img, .tree .node-img { width: 48px; height: 30px; margin: 0; }
+.page-head .node-ill { display: inline-block; width: 72px; vertical-align: middle; } .page-head .node-img { width: 72px; height: 45px; display: inline-block; vertical-align: middle; margin: 0; }
+.cfg-hero .node-ill { width: 120px; }
 
 /* Paso 2: paredes y módulos */
 .walls { display: grid; gap: var(--space-6); padding-bottom: 96px; }

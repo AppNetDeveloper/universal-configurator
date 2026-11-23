@@ -70,6 +70,16 @@ function admin_handle(string $path, string $method): void
                 'layoutFrom' => layout_for($nid)['node_id'], 'configs' => (int) val('SELECT COUNT(*) FROM configurations WHERE node_id = ?', [$nid])]);
             return;
         }
+        if ($post && $match('/catalogo/(\d+)/imagen')) {
+            $nid = (int) $m[1];
+            $node = node_get($nid) ?? throw new UcError(t('Ese nodo no existe.'), [], 404);
+            try {
+                $url = image_store_upload($_FILES['imagen'] ?? []);
+                node_update($nid, ['name' => $node['name'], 'slug' => $node['slug'], 'description' => $node['description'], 'image' => $url]);
+            } catch (UcError $ex) { admin_back("/catalogo/$nid", $ex); }
+            flash(t('Imagen subida.'));
+            admin_back("/catalogo/$nid");
+        }
         if ($post && $match('/catalogo/(\d+)/(activar|mover|borrar)')) {
             $nid = (int) $m[1];
             $parent = node_get($nid)['parent_id'] ?? null;

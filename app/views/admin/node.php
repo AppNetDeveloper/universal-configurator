@@ -11,9 +11,17 @@
     <label><?= te('Identificador (slug)') ?><input name="slug" value="<?= e(old('slug', $node['slug'])) ?>"></label>
     <label><?= te('Descripción') ?><textarea name="description" rows="2"><?= e(old('description', $node['description'])) ?></textarea></label>
     <label><?= te('Imagen o color') ?><input name="image" placeholder="https://… o #C8A165" value="<?= e(old('image', (string) $node['image'])) ?>"></label>
+    <p class="muted small"><?= te('Vale un color (#C8A165), una ilustración de la app (ill:cocina-linea:#C8A165; tipos: {k}), una imagen subida abajo o una dirección https://.', ['k' => implode(', ', array_keys(ILLUSTRATIONS))]) ?></p>
     <button class="btn btn-primary" type="submit"><?= te('Guardar') ?></button>
   </form>
   <div class="stack">
+    <form method="post" action="/admin/catalogo/<?= (int) $node['id'] ?>/imagen" enctype="multipart/form-data" class="card stack">
+      <?= csrf_field() ?>
+      <h2><?= te('Subir imagen') ?></h2>
+      <p class="muted small"><?= te('PNG, JPEG o WebP; 2 MB como mucho. Sustituye la imagen o el color actual.') ?></p>
+      <input type="file" name="imagen" accept="image/png,image/jpeg,image/webp" required>
+      <button class="btn btn-ghost" type="submit"><?= te('Subir') ?></button>
+    </form>
     <div class="card stack">
       <h2><?= te('Estado') ?></h2>
       <p class="muted"><?= $node['active'] ? te('Activo: aparece en el configurador.') : te('Desactivado: no aparece (ni sus hijos).') ?>
