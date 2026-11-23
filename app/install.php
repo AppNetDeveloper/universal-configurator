@@ -13,7 +13,7 @@ function install_requirements(): array
 {
     $out = [];
     $out[] = ['PHP 8.2 o superior', PHP_VERSION_ID >= 80200, 'Versión actual: ' . PHP_VERSION];
-    foreach (['pdo_sqlite' => 'la base de datos', 'mbstring' => 'el texto en UTF-8', 'sodium' => 'cifrar la contraseña SMTP', 'json' => 'la API y el MCP'] as $ext => $why) {
+    foreach (['pdo_sqlite' => 'la base de datos', 'mbstring' => 'el texto en UTF-8', 'sodium' => 'cifrar la contraseña SMTP', 'json' => 'la API y el MCP', 'zip' => 'las copias de seguridad y las actualizaciones'] as $ext => $why) {
         $out[] = ["Extensión $ext", extension_loaded($ext), extension_loaded($ext) ? 'Disponible' : "Falta: necesaria para $why"];
     }
     if (!is_dir(UC_DATA)) @mkdir(UC_DATA, 0770, true);

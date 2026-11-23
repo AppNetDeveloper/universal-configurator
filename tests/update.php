@@ -129,4 +129,48 @@ check('migración que falla: vuelve sola a la 9.9.0 (código y base), sin manten
     && eq(false, $res['ok']) && eq(true, str_contains((string) $res['message'], 'migración rota a propósito')));
 check('tras la vuelta atrás, la aplicación arranca y responde', function () use ($run) { [$rc, $o] = $run(['backups']); return eq(0, $rc); });
 
+// --- 5. desde el panel: la fase 1 en una petición y la fase 2 en la SIGUIENTE petición web (public/index.php)
+$phase1 = function () use ($php, $root, $env, $feed): array {
+    $code = 'require "app/bootstrap.php"; Actor::set("panel"); try { $r = update_run_remote("admin"); echo "OK ", $r["to"]; } catch (Throwable $e) { echo "ERR ", $e->getMessage(); }';
+    $p = proc_open([$php, '-r', $code], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $root, $env + $feed + ['PATH' => getenv('PATH')]);
+    $o = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+    return [proc_close($p), $o];
+};
+$web = function () use ($php, $root, $data): array {
+    $port = 0; $srv = null;
+    for ($t = 0; $t < 20 && !$port; $t++) {
+        $cand = random_int(20000, 60000);
+        $srv = proc_open([$php, '-S', "127.0.0.1:$cand", '-t', "$root/public", "$root/public/index.php"], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pp, $root, ['UC_DATA' => $data, 'PATH' => getenv('PATH')]);
+        for ($i = 0; $i < 30; $i++) { usleep(100000); if (@fsockopen('127.0.0.1', $cand)) { $port = $cand; break; } }
+        if (!$port) proc_terminate($srv);
+    }
+    $ctx = stream_context_create(['http' => ['ignore_errors' => true, 'timeout' => 20]]);
+    $body = (string) @file_get_contents("http://127.0.0.1:$port/", false, $ctx);
+    $status = (int) (preg_match('#HTTP/\S+ (\d+)#', $http_response_header[0] ?? '', $m) ? $m[1] : 0);
+    proc_terminate($srv);
+    return [$status, $body];
+};
+$release('9.9.2');
+$publish(['9.9.2']);
+[$rc, $out] = $phase1();
+$mid = is_file("$data/updates/pending.json") && is_file("$data/maintenance.json");
+[$st, $body] = $web();
+clearstatcache(); // el is_file de antes queda en la caché de stat de PHP
+check('panel: tras «Actualizar ahora», la siguiente visita termina la actualización (200, versión nueva, sin mantenimiento)', fn() => eq(true, str_starts_with($out, 'OK 9.9.2'))
+    && eq(true, $mid) && eq(200, $st) && eq('9.9.2', $version()) && eq(false, is_file("$data/updates/pending.json")) && eq(false, is_file("$data/maintenance.json"))
+    && eq(true, json_decode((string) file_get_contents("$data/updates/last-result.json"), true)['ok']));
+$release('9.9.3', function (string $src) {
+    $core = "$src/app/core.php";
+    file_put_contents($core, str_replace("function migrate(): void\n{", "function migrate(): void\n{\n    throw new RuntimeException('migración rota (web)');", (string) file_get_contents($core)));
+    file_put_contents($core, preg_replace('/const UC_SCHEMA = (\d+);/', 'const UC_SCHEMA = 98;', (string) file_get_contents($core)));
+});
+$publish(['9.9.3']);
+[$rc, $out] = $phase1();
+[$st, $body] = $web();
+[$st2] = $web();
+clearstatcache();
+check('panel: si la versión nueva falla al arrancar, esa visita vuelve sola a la anterior (503 de un momento) y la siguiente ya funciona', fn() => eq(true, str_starts_with($out, 'OK 9.9.3'))
+    && eq(503, $st) && eq('9.9.2', $version()) && eq(200, $st2) && eq(false, is_file("$data/updates/pending.json")) && eq(false, is_file("$data/maintenance.json"))
+    && eq(true, str_contains((string) json_decode((string) file_get_contents("$data/updates/last-result.json"), true)['message'], 'migración rota (web)')));
+
 done();

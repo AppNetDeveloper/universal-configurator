@@ -11,7 +11,7 @@ if (PHP_SAPI === 'cli-server') {
 // Antes de cargar la aplicación: terminar una actualización pendiente (con el código nuevo) y, si hay mantenimiento, 503.
 require __DIR__ . '/../app/update_finish.php';
 uc_update_finish_entry();
-require __DIR__ . '/../app/maintenance.php';
+require_once __DIR__ . '/../app/maintenance.php';
 if (uc_maintenance_gate()) return;
 
 require_once __DIR__ . '/../app/bootstrap.php';

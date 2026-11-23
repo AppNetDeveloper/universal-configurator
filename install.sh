@@ -45,7 +45,7 @@ fi
 say "Instalando paquetes (PHP-FPM con SQLite, Caddy)…"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q php-fpm php-cli php-sqlite3 php-mbstring rsync curl caddy || fail "No se pudieron instalar los paquetes (¿falta el repositorio de Caddy? https://caddyserver.com/docs/install)."
+apt-get install -y -q php-fpm php-cli php-sqlite3 php-mbstring php-zip php-curl php-gd rsync curl caddy || fail "No se pudieron instalar los paquetes (¿falta el repositorio de Caddy? https://caddyserver.com/docs/install)."
 PHPV="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
 php -r 'exit(PHP_VERSION_ID >= 80200 ? 0 : 1);' || fail "Hace falta PHP 8.2 o superior (hay $PHPV)."
 FPM_SOCK="/run/php/php${PHPV}-fpm.sock"

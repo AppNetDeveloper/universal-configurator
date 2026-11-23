@@ -122,7 +122,7 @@ actividad**:
 ## Antes y después (recorrido del móvil)
 
 El mismo recorrido (iPhone 13; portada → paso 1 → Cocina → Dúo → Roble → paso 2 → «+» → resumen) hecho sobre la v0.2
-y sobre la v0.3 se compara lado a lado con `tests/capturas.cjs` y el script de recorrido del coordinador. Qué mejoró:
+y sobre la v0.3 (con `tests/recorrido-movil.cjs`, que además mide el paso 2) se comparó lado a lado. Qué mejoró:
 la portada empieza por «Empezar»; el paso 1 se ve en dos columnas con la ilustración; el paso 2 ya no gasta media
 pantalla en pasos, ruta y párrafo, enseña el esquema y tarjetas compactas sin referencias ni código; el paso 3 ya no
 pide «Aceptar» al cliente. Qué sigue flojo: con tres paredes, el esquema pegajoso ocupa unos 110 px del móvil; las
