@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tablenova · Configurador de cocinas (demo)</title>
+<style>
+:root{
+  --indigo:#4F46E5; --indigo-2:#6366F1; --indigo-hover:#4338CA;
+  --bg:#F8FAFC; --card:#FFFFFF; --border:#E2E8F0;
+  --text:#0F172A; --muted:#64748B;
+  --ok:#059669; --warn:#B45309;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:0 20px}
+h2{font-size:19px;margin:0 0 4px}
+.hint{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+.mt{margin-top:26px}
+/* Cabecera */
+.topbar{position:sticky;top:0;z-index:40;background:#fff;border-bottom:1px solid var(--border)}
+.topbar-in{display:flex;justify-content:space-between;align-items:center;padding:14px 20px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.mark{width:22px;height:22px;border-radius:6px;background:var(--indigo);display:inline-block}
+.chip{font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--indigo);background:#EEF2FF;border:1px solid #C7D2FE;padding:2px 8px;border-radius:999px}
+.topbar-note{font-size:12.5px;color:var(--muted)}
+/* Pasos */
+.steps{display:flex;gap:8px;margin:18px auto 0}
+.step{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 14px;cursor:pointer;font-family:inherit}
+.dot{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);background:#fff;color:var(--muted);font-weight:600;font-size:13px;display:grid;place-items:center;flex:none}
+.lbl{font-weight:600;font-size:14px;color:var(--text);line-height:1.15}
+.step:not(.active):not(.done) .lbl{color:var(--muted)}
+.step.active{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo)}
+.step.active .dot{background:var(--indigo);border-color:var(--indigo);color:#fff}
+.step.done .dot{background:var(--indigo-2);border-color:var(--indigo-2);color:#fff}
+/* Main */
+main.wrap{padding-top:20px;padding-bottom:110px}
+/* Botones */
+.btn{border-radius:10px;padding:11px 18px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid transparent;font-family:inherit}
+.btn-primary{background:var(--indigo);color:#fff}
+.btn-primary:hover{background:var(--indigo-hover)}
+.btn-ghost{background:#fff;border-color:var(--border);color:var(--text)}
+.btn-ghost:hover{border-color:var(--indigo-2);color:var(--indigo)}
+.actions{display:flex;justify-content:space-between;align-items:center;margin-top:22px;gap:10px}
+/* Paso 1 */
+.grid-models{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.model{border:1px solid var(--border);border-radius:12px;padding:18px;background:#fff;cursor:pointer}
+.model h3{margin:0 0 6px;font-size:16px}
+.model p{margin:0;color:var(--muted);font-size:13.5px}
+.mcount{display:inline-block;margin-top:10px;font-size:12px;color:var(--muted)}
+.model.sel{border-color:var(--indigo);box-shadow:0 0 0 2px var(--indigo);background:#EEF2FF}
+.colors{display:flex;gap:18px;flex-wrap:wrap}
+.swatch{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:none;border:none;padding:0;font-family:inherit}
+.sw{width:44px;height:44px;border-radius:50%;border:1px solid var(--border);display:block}
+.swatch span{font-size:13px;color:var(--muted)}
+.swatch.sel .sw{box-shadow:0 0 0 3px rgba(79,70,229,.4)}
+.swatch.sel span{color:var(--text);font-weight:600}
+/* Paso 2 */
+.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.add-box{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.add-box select{padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;background:#fff;color:var(--text);font-family:inherit}
+.grid-mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+.mod-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.mc-top{display:flex;align-items:center;gap:8px}
+.cat{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--indigo);background:#EEF2FF;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.mc-name{font-weight:600;font-size:15px;flex:1}
+.del{border:none;background:transparent;color:var(--muted);font-size:14px;cursor:pointer;width:28px;height:28px;border-radius:8px;flex:none}
+.del:hover{background:#FEE2E2;color:#B91C1C}
+.mc-mid{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.wlabel{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.wlabel input{width:74px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-weight:600;color:var(--text);font-family:inherit}
+.std{font-size:12.5px;color:var(--muted)}
+.std b{color:var(--text)}
+.cap{color:var(--warn);font-style:normal;font-size:11.5px}
+.mc-bot{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px dashed var(--border);padding-top:12px}
+.mc-bot select{flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;background:#fff;color:var(--text);font-family:inherit}
+.price{font-size:18px;font-weight:700;color:var(--indigo);white-space:nowrap}
+/* Paso 3 */
+.meta{background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px;padding:12px 16px;font-size:14px;margin-bottom:16px}
+.sum{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+th,td{padding:11px 14px;text-align:left;font-size:14px;border-bottom:1px solid var(--border)}
+th{background:#F8FAFC;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.r{text-align:right}
+tfoot td{border-bottom:none;font-size:15px}
+.total{font-size:18px;font-weight:800;color:var(--indigo)}
+.fine{font-size:12px;color:var(--muted);margin-top:12px}
+/* Barra total */
+.totalbar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--border);z-index:50}
+.totalbar-in{display:flex;align-items:center;gap:14px;padding:14px 20px}
+#mod-count{font-size:13px;color:var(--muted);margin-right:auto}
+.total-label{font-size:13px;color:var(--muted)}
+#total-live{font-size:22px;font-weight:800;color:var(--indigo)}
+/* Toast */
+.toast{position:fixed;right:20px;bottom:84px;background:#0F172A;color:#fff;padding:11px 16px;border-radius:10px;font-size:13.5px;opacity:0;transform:translateY(6px);transition:.25s;pointer-events:none;z-index:60}
+.toast.show{opacity:1;transform:none}
+@media(max-width:760px){
+  .grid-mods{grid-template-columns:1fr}
+  .topbar-note{display:none}
+  .step{padding:8px 10px;gap:6px}
+  .dot{width:22px;height:22px;font-size:11px}
+  .lbl{font-size:11.5px;white-space:normal;text-align:left}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <span>Tablenova · Configurador de cocinas</span>
+      <span class="chip">DEMO</span>
+    </div>
+    <span class="topbar-note">Precios sin IVA · Se muestran precios, no se cobra online</span>
+  </div>
+</header>
+
+<nav class="steps wrap" id="steps" aria-label="Progreso">
+  <button class="step" data-step="1" type="button"><span class="dot">1</span><span class="lbl">Modelo y color</span></button>
+  <button class="step" data-step="2" type="button"><span class="dot">2</span><span class="lbl">Módulos</span></button>
+  <button class="step" data-step="3" type="button"><span class="dot">3</span><span class="lbl">Resumen y precio</span></button>
+</nav>
+
+<main class="wrap">
+  <!-- PASO 1 -->
+  <section id="panel-1">
+    <h2>Elige el modelo de cocina</h2>
+    <p class="hint">Al elegir un modelo se cargan automáticamente sus módulos por defecto.</p>
+    <div class="grid-models" id="models"></div>
+    <h2 class="mt">Elige el color</h2>
+    <div class="colors" id="colors"></div>
+    <div class="actions">
+      <span></span>
+      <button class="btn btn-primary" id="next-1" type="button">Siguiente: módulos →</button>
+    </div>
+  </section>
+
+  <!-- PASO 2 -->
+  <section id="panel-2" hidden>
+    <div class="panel-head">
+      <div>
+        <h2>Módulos de la cocina</h2>
+        <p class="hint">Edita la medida, sustituye o borra módulos. Cobro por estándar: se aplica el estándar más pequeño que sea ≥ a la medida elegida.</p>
+      </div>
+      <div class="add-box">
+        <select id="add-cat" aria-label="Categoría"></select>
+        <select id="add-type" aria-label="Módulo"></select>
+        <button class="btn btn-ghost" id="add-btn" type="button">+ Añadir módulo</button>
+      </div>
+    </div>
+    <div class="grid-mods" id="mods"></div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="back-2" type="button">← Atrás</button>
+      <button class="btn btn-primary" id="next-2" type="button">Siguiente: resumen →</button>
+    </div>
+  </section>
+
+  <!-- PASO 3 -->
+  <section id="panel-3" hidden>
+    <h2>Resumen y precio</h2>
+    <div class="meta" id="meta"></div>
+    <table class="sum">
+      <thead><tr><th>Categoría</th><th>Módulo</th><th>Medida</th><th>Estándar</th><th class="r">Precio</th></tr></thead>
+      <tbody id="sum-body"></tbody>
+      <tfoot><tr><td colspan="4" class="r">Total (sin IVA)</td><td class="r total" id="sum-total"></td></tr></tfoot>
+    </table>
+    <p class="fine">Presupuesto de demostración. Precios sin IVA. La aplicación solo muestra precios: no existe pago online.</p>
+    <div class="actions">
+      <button class="btn btn-ghost" id="back-3" type="button">← Atrás</button>
+      <button class="btn btn-primary" id="dl" type="button">Descargar presupuesto (PDF)</button>
+    </div>
+  </section>
+</main>
+
+<footer class="totalbar">
+  <div class="wrap totalbar-in">
+    <span id="mod-count">0 módulos</span>
+    <span class="total-label">Total (sin IVA)</span>
+    <strong id="total-live">0 €</strong>
+  </div>
+</footer>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script>
+'use strict';
+const CATEGORIES = {
+  base: 'Módulo bajo',
+  alto: 'Módulo alto',
+  encimera: 'Encimera'
+};
+
+// Catálogo: cada tipo de módulo tiene su tabla de precios por estándar (cm → € sin IVA)
+const MODULE_TYPES = {
+  'base-cajones':      {cat:'base',     name:'Base con 2 cajones',    def:60,  prices:{45:110, 60:135, 80:165, 90:180}},
+  'base-fregadero':    {cat:'base',     name:'Base con fregadero',    def:60,  prices:{45:95,  60:115, 80:140, 90:155}},
+  'base-horno':        {cat:'base',     name:'Base con horno',        def:60,  prices:{60:220}},
+  'base-lavavajillas': {cat:'base',     name:'Base con lavavajillas', def:60,  prices:{60:240}},
+  'base-armario':      {cat:'base',     name:'Base con armario',      def:60,  prices:{45:75,  60:90,  80:115, 90:130}},
+  'base-zapatero':     {cat:'base',     name:'Base con calzado',      def:45,  prices:{45:85,  60:100}},
+  'alto-horno':        {cat:'alto',     name:'Torre de horno',        def:60,  prices:{60:260, 90:320}},
+  'alto-frigorifico':  {cat:'alto',     name:'Torre de frigorífico',  def:60,  prices:{60:180, 90:220}},
+  'alto-armario':      {cat:'alto',     name:'Armario alto',          def:60,  prices:{45:95,  60:115, 90:160}},
+  'alto-alacena':      {cat:'alto',     name:'Alacena alta',          def:60,  prices:{45:70,  60:85,  90:120}},
+  'enc-cuarzo':        {cat:'encimera', name:'Encimera de cuarzo',    def:180, prices:{120:220, 150:275, 180:330, 240:440}},
+  'enc-granito':       {cat:'encimera', name:'Encimera de granito',   def:180, prices:{120:150, 150:187, 180:225, 240:300}}
+};
+
+const MODELS = {
+  linea:  {name:'Línea',  desc:'Cocina recta de un solo frente',   defaults:['base-fregadero','base-cajones','base-horno','alto-armario','enc-cuarzo']},
+  duo:    {name:'Dúo',    desc:'Cocina en L de dos frentes',       defaults:['base-fregadero','base-cajones','base-lavavajillas','base-armario','alto-horno','alto-alacena','enc-cuarzo']},
+  escala: {name:'Escala', desc:'Cocina en esquina con torre',      defaults:['base-fregadero','base-cajones','base-horno','base-zapatero','alto-frigorifico','alto-armario','enc-granito']}
+};
+
+const COLORS = {
+  blanco:    {name:'Blanco',    hex:'#F8FAFC'},
+  roble:     {name:'Roble',     hex:'#C8A165'},
+  antracita: {name:'Antracita', hex:'#374151'},
+  madera:    {name:'Madera',    hex:'#8B5E3C'}
+};
+
+let state = {step:1, model:null, color:null, modules:[]};
+let uid = 0;
+
+const fmt = n => n.toLocaleString('es-ES',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+
+// Regla de cobro por estándar: el estándar disponible más pequeño que sea >= a la medida real.
+// Si la medida supera todos los estándares, se cobra el máximo (con aviso).
+function priceFor(typeId, width){
+  const t = MODULE_TYPES[typeId];
+  const avail = Object.keys(t.prices).map(Number).sort((a,b)=>a-b);
+  let std = avail.find(s => s >= width);
+  let capped = false;
+  if(std === undefined){ std = avail[avail.length-1]; capped = true; }
+  return {price:t.prices[std], std, capped};
+}
+
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+function goTo(n){
+  if(n === state.step) return;
+  if(n === 2 && !(state.model && state.color)){ toast('Elige primero un modelo y un color'); return; }
+  if(n === 3 && state.modules.length === 0){ toast('Añade al menos un módulo'); return; }
+  state.step = n;
+  render();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function pickModel(id){
+  if(state.model && state.model !== id && state.modules.length > 0){
+    if(!confirm('Cambiar el modelo recargará los módulos por defecto. ¿Continuar?')) return;
+  }
+  state.model = id;
+  state.modules = MODELS[id].defaults.map(tid => ({id:++uid, type:tid, width:MODULE_TYPES[tid].def}));
+  render();
+}
+
+function renderModels(){
+  document.getElementById('models').innerHTML = Object.entries(MODELS).map(([id,m]) =>
+    '<article class="model' + (state.model===id?' sel':'') + '" data-model="' + id + '" tabindex="0">' +
+      '<h3>' + m.name + '</h3><p>' + m.desc + '</p>' +
+      '<span class="mcount">' + m.defaults.length + ' módulos por defecto</span>' +
+    '</article>').join('');
+}
+
+function renderColors(){
+  document.getElementById('colors').innerHTML = Object.entries(COLORS).map(([id,c]) =>
+    '<button class="swatch' + (state.color===id?' sel':'') + '" data-color="' + id + '" type="button">' +
+      '<span class="sw" style="background:' + c.hex + '"></span><span>' + c.name + '</span>' +
+    '</button>').join('');
+}
+
+function modCard(m){
+  const t = MODULE_TYPES[m.type];
+  const p = priceFor(m.type, m.width);
+  const opts = Object.entries(MODULE_TYPES)
+    .filter(([,x]) => x.cat === t.cat)
+    .map(([id,x]) => '<option value="' + id + '"' + (id===m.type?' selected':'') + '>' + x.name + '</option>')
+    .join('');
+  return '<article class="mod-card" data-id="' + m.id + '">' +
+    '<div class="mc-top">' +
+      '<span class="cat">' + CATEGORIES[t.cat] + '</span>' +
+      '<span class="mc-name">' + t.name + '</span>' +
+      '<button class="del" data-act="del" type="button" title="Borrar módulo">✕</button>' +
+    '</div>' +
+    '<div class="mc-mid">' +
+      '<label class="wlabel">Ancho <input type="number" min="30" max="300" step="5" value="' + m.width + '" data-act="width"> cm</label>' +
+      '<span class="std">Se cobra: estándar <b>' + p.std + ' cm</b>' + (p.capped ? ' <em class="cap">(máx. disponible)</em>' : '') + '</span>' +
+    '</div>' +
+    '<div class="mc-bot">' +
+      '<select data-act="replace" title="Sustituir por otro módulo de la misma categoría">' + opts + '</select>' +
+      '<span class="price">' + fmt(p.price) + '</span>' +
+    '</div>' +
+  '</article>';
+}
+
+function renderMods(){
+  document.getElementById('mods').innerHTML =
+    state.modules.length ? state.modules.map(modCard).join('')
+    : '<p class="hint">No hay módulos. Añade alguno con los selectores de arriba.</p>';
+}
+
+function renderSummary(){
+  const m = state.model ? MODELS[state.model].name : '—';
+  const c = state.color ? COLORS[state.color].name : '—';
+  const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  document.getElementById('meta').innerHTML =
+    'Modelo: <b>' + m + '</b> &nbsp;·&nbsp; Color: <b>' + c + '</b> &nbsp;·&nbsp; Fecha: ' + fecha;
+  document.getElementById('sum-body').innerHTML = state.modules.map(x => {
+    const t = MODULE_TYPES[x.type];
+    const p = priceFor(x.type, x.width);
+    return '<tr><td>' + CATEGORIES[t.cat] + '</td><td>' + t.name + '</td><td>' + x.width + ' cm</td><td>' + p.std + ' cm</td><td class="r">' + fmt(p.price) + '</td></tr>';
+  }).join('');
+}
+
+function updateTotal(){
+  const total = state.modules.reduce((s,x) => s + priceFor(x.type, x.width).price, 0);
+  document.getElementById('total-live').textContent = fmt(total);
+  document.getElementById('sum-total').textContent = fmt(total);
+  const n = state.modules.length;
+  document.getElementById('mod-count').textContent = n + (n === 1 ? ' módulo' : ' módulos');
+}
+
+function render(){
+  document.querySelectorAll('.step').forEach(s => {
+    const n = +s.dataset.step;
+    s.classList.toggle('active', n === state.step);
+    s.classList.toggle('done', n < state.step);
+  });
+  document.getElementById('panel-1').hidden = state.step !== 1;
+  document.getElementById('panel-2').hidden = state.step !== 2;
+  document.getElementById('panel-3').hidden = state.step !== 3;
+  if(state.step === 1){ renderModels(); renderColors(); }
+  if(state.step === 2) renderMods();
+  if(state.step === 3) renderSummary();
+  updateTotal();
+}
+
+// Descarga simulada del presupuesto (plantilla de texto)
+function download(){
+  const m = MODELS[state.model];
+  const c = COLORS[state.color];
+  const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const sep = '------------------------------------------';
+  const lines = [
+    'PRESUPUESTO — CONFIGURADOR DE COCINAS (DEMO)',
+    'Cliente: Tablenova Tableros y Servicios SL',
+    'Fecha: ' + fecha,
+    'Modelo: ' + m.name + ' — Color: ' + c.name,
+    sep,
+    'Categoría | Módulo | Medida | Estándar | Precio (sin IVA)',
+    sep
+  ];
+  let total = 0;
+  state.modules.forEach(x => {
+    const t = MODULE_TYPES[x.type];
+    const p = priceFor(x.type, x.width);
+    total += p.price;
+    lines.push(CATEGORIES[t.cat] + ' | ' + t.name + ' | ' + x.width + ' cm | est. ' + p.std + ' cm | ' + p.price.toLocaleString('es-ES') + ',00 €');
+  });
+  lines.push(sep);
+  lines.push('TOTAL (sin IVA): ' + total.toLocaleString('es-ES') + ',00 €');
+  lines.push('');
+  lines.push('La aplicación solo muestra precios: no existe pago online.');
+  const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'presupuesto-tablenova-demo.txt';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('Descarga simulada: presupuesto-tablenova-demo.txt');
+}
+
+// ---- Eventos ----
+document.getElementById('steps').addEventListener('click', e => {
+  const s = e.target.closest('.step');
+  if(s) goTo(+s.dataset.step);
+});
+document.getElementById('models').addEventListener('click', e => {
+  const m = e.target.closest('[data-model]');
+  if(m) pickModel(m.dataset.model);
+});
+document.getElementById('colors').addEventListener('click', e => {
+  const c = e.target.closest('[data-color]');
+  if(c){ state.color = c.dataset.color; render(); }
+});
+document.getElementById('next-1').addEventListener('click', () => goTo(2));
+document.getElementById('back-2').addEventListener('click', () => goTo(1));
+document.getElementById('next-2').addEventListener('click', () => goTo(3));
+document.getElementById('back-3').addEventListener('click', () => goTo(2));
+document.getElementById('dl').addEventListener('click', download);
+
+// El evento 'change' NO burbujea: se escucha en fase de captura para que la delegación funcione
+document.getElementById('mods').addEventListener('change', e => {
+  const card = e.target.closest('.mod-card');
+  if(!card) return;
+  const mod = state.modules.find(x => x.id === +card.dataset.id);
+  if(!mod) return;
+  if(e.target.dataset.act === 'width'){
+    let v = parseInt(e.target.value, 10);
+    if(isNaN(v)) v = MODULE_TYPES[mod.type].def;
+    v = Math.min(300, Math.max(30, v));
+    mod.width = v;
+    render();
+  } else if(e.target.dataset.act === 'replace'){
+    mod.type = e.target.value;
+    render();
+    toast('Módulo sustituido');
+  }
+}, true);
+document.getElementById('mods').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act="del"]');
+  if(!btn) return;
+  const card = btn.closest('.mod-card');
+  state.modules = state.modules.filter(x => x.id !== +card.dataset.id);
+  render();
+  toast('Módulo eliminado');
+});
+
+// Añadir módulo
+const addCat = document.getElementById('add-cat');
+const addType = document.getElementById('add-type');
+function fillAddTypes(){
+  const cat = addCat.value;
+  addType.innerHTML = Object.entries(MODULE_TYPES)
+    .filter(([,x]) => x.cat === cat)
+    .map(([id,x]) => '<option value="' + id + '">' + x.name + '</option>')
+    .join('');
+}
+addCat.innerHTML = Object.keys(CATEGORIES).map(c => '<option value="' + c + '">' + CATEGORIES[c] + '</option>').join('');
+addCat.addEventListener('change', fillAddTypes);
+document.getElementById('add-btn').addEventListener('click', () => {
+  const typeId = addType.value;
+  if(!typeId) return;
+  state.modules.push({id:++uid, type:typeId, width:MODULE_TYPES[typeId].def});
+  render();
+  toast('Módulo añadido');
+});
+
+fillAddTypes();
+render();
+</script>
+</body>
+</html>
