@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 const ADMIN_SECTIONS = [
     '/' => 'Inicio', '/catalogo' => 'Catálogo', '/tipos' => 'Tipos y tramos', '/configuraciones' => 'Configuraciones', '/leads' => 'Leads',
-    '/usuarios' => 'Personas', '/ajustes' => 'Ajustes', '/tokens' => 'Tokens MCP', '/copias' => 'Copias de seguridad', '/actualizaciones' => 'Actualizaciones',
+    '/usuarios' => 'Personas', '/ajustes' => 'Ajustes', '/tokens' => 'Tokens MCP', '/copias' => 'Copias', '/actualizaciones' => 'Actualizaciones',
     '/actividad' => 'Actividad',
 ];
 

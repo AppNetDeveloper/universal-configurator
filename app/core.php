@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Sin dependencias externas: PHP 8.2+ con pdo_sqlite y mbstring.
  */
 
-const UC_VERSION = '0.1.0';
+const UC_VERSION = '0.3.0';
 const UC_SCHEMA = 7;
 const UC_MAX_BODY = 256 * 1024; // cuerpo máximo de una petición a /api y /mcp
 const UC_AUTHOR_URL = 'https://www.bionicadri.com';

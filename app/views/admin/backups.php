@@ -6,37 +6,33 @@
 <div class="two-col">
   <div class="stack">
     <?php if (!$backups): ?><div class="empty"><p><?= te('Todavía no hay copias. Haz la primera con «Hacer copia ahora».') ?></p></div><?php else: ?>
-    <div class="card flush">
-      <table class="table">
-        <thead><tr><th><?= te('Copia') ?></th><th class="r"><?= te('Tamaño') ?></th><th class="hide-sm"><?= te('Versión') ?></th><th></th></tr></thead>
-        <tbody>
-        <?php foreach ($backups as $b): $id = 'bk' . substr(md5($b['name']), 0, 8); ?>
-          <tr>
-            <td><strong><?= e(date('d/m/Y H:i', strtotime($b['created_at']))) ?></strong>
-              <?php if ($b['auto']): ?><span class="badge"><?= te('automática') ?></span><?php elseif (str_contains($b['name'], '-antes')): ?><span class="badge"><?= te('antes de restaurar o actualizar') ?></span><?php elseif (str_contains($b['name'], '-subida')): ?><span class="badge"><?= te('subida') ?></span><?php endif; ?>
-              <div class="small muted mono"><?= e($b['name']) ?></div></td>
-            <td class="r num"><?= e(bk_human_size($b['size'])) ?></td>
-            <td class="hide-sm"><?= $b['version'] ? 'v' . e($b['version']) : '—' ?></td>
-            <td class="r"><details class="bk-actions"><summary><?= te('Acciones') ?></summary>
-              <form method="post" action="/admin/copias/<?= e($b['name']) ?>/descargar" class="stack">
-                <?= csrf_field() ?>
-                <label><?= te('Contraseña para cifrarla (opcional, 10 caracteres o más)') ?><input type="password" name="password" autocomplete="new-password" minlength="10"></label>
-                <button class="btn btn-ghost btn-sm" type="submit"><?= te('Descargar') ?></button>
-              </form>
-              <form method="post" action="/admin/copias/<?= e($b['name']) ?>/restaurar" class="stack restore-form">
-                <?= csrf_field() ?>
-                <p class="small"><?= te('Restaurar sustituye TODOS los datos de ahora por los de esta copia (antes se guarda una copia de los de ahora). Escribe RESTAURAR para confirmarlo.') ?></p>
-                <input name="confirm" autocomplete="off" placeholder="RESTAURAR" aria-label="<?= te('Escribe RESTAURAR') ?>">
-                <label class="check"><input type="checkbox" name="with_config" value="1"> <span><?= te('Restaurar también las claves (solo si la copia viene de otra instalación; si no, se conserva la de aquí y la contraseña SMTP de la copia puede no leerse)') ?></span></label>
-                <button class="btn btn-danger btn-sm" type="submit"><?= te('Restaurar') ?></button>
-              </form>
-              <form method="post" action="/admin/copias/<?= e($b['name']) ?>/borrar" data-confirm="<?= te('¿Borrar la copia {n}?', ['n' => $b['name']]) ?>"><?= csrf_field() ?><button class="btn btn-ghost btn-sm danger" type="submit"><?= te('Borrar') ?></button></form>
-            </details></td>
-          </tr>
-        <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
+    <ul class="bk-list" role="list">
+    <?php foreach ($backups as $b): ?>
+      <li class="card bk-item">
+        <div class="bk-head">
+          <div><strong><?= e(date('d/m/Y H:i', strtotime($b['created_at']))) ?></strong>
+            <?php if ($b['auto']): ?><span class="badge"><?= te('automática') ?></span><?php elseif (str_contains($b['name'], '-antes')): ?><span class="badge"><?= te('antes de restaurar o actualizar') ?></span><?php elseif (str_contains($b['name'], '-subida')): ?><span class="badge"><?= te('subida') ?></span><?php endif; ?>
+            <div class="small muted mono clip-name"><?= e($b['name']) ?></div></div>
+          <div class="bk-meta"><span class="num"><?= e(bk_human_size($b['size'])) ?></span><span class="small muted"><?= $b['version'] ? 'v' . e($b['version']) : '' ?></span></div>
+        </div>
+        <details class="bk-actions"><summary><?= te('Descargar, restaurar o borrar') ?></summary>
+          <form method="post" action="/admin/copias/<?= e($b['name']) ?>/descargar" class="stack">
+            <?= csrf_field() ?>
+            <label><?= te('Contraseña para cifrarla (opcional, 10 caracteres o más)') ?><input type="password" name="password" autocomplete="new-password" minlength="10"></label>
+            <button class="btn btn-ghost btn-sm" type="submit"><?= te('Descargar') ?></button>
+          </form>
+          <form method="post" action="/admin/copias/<?= e($b['name']) ?>/restaurar" class="stack restore-form">
+            <?= csrf_field() ?>
+            <p class="small"><?= te('Restaurar sustituye TODOS los datos de ahora por los de esta copia (antes se guarda una copia de los de ahora). Escribe RESTAURAR para confirmarlo.') ?></p>
+            <input name="confirm" autocomplete="off" placeholder="RESTAURAR" aria-label="<?= te('Escribe RESTAURAR') ?>">
+            <label class="check"><input type="checkbox" name="with_config" value="1"> <span><?= te('Restaurar también las claves (solo si la copia viene de otra instalación; si no, se conserva la de aquí y la contraseña SMTP de la copia puede no leerse)') ?></span></label>
+            <button class="btn btn-danger btn-sm" type="submit"><?= te('Restaurar') ?></button>
+          </form>
+          <form method="post" action="/admin/copias/<?= e($b['name']) ?>/borrar" data-confirm="<?= te('¿Borrar la copia {n}?', ['n' => $b['name']]) ?>"><?= csrf_field() ?><button class="btn btn-ghost btn-sm danger" type="submit"><?= te('Borrar') ?></button></form>
+        </details>
+      </li>
+    <?php endforeach; ?>
+    </ul>
     <?php endif; ?>
   </div>
   <div class="stack">

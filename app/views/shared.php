@@ -17,5 +17,5 @@ $path = implode(' · ', array_column($cfg['node']['path'], 'name'));
       <a class="btn btn-primary btn-block" href="/"><?= te('Configurar la mía') ?></a>
     </div>
   </div>
-  <?php require __DIR__ . '/_sum.php'; ?>
+  <?php $sumTitle = t('Qué incluye'); require __DIR__ . '/_sum.php'; ?>
 </div>

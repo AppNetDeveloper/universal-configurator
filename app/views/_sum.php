@@ -1,7 +1,7 @@
 <?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
 <?php /** Resumen compacto para el cliente (paso 3 y enlace compartido). @var array $cfg @var string $tax */ ?>
     <section class="card sum" aria-label="<?= te('Resumen') ?>">
-      <h2><?= te('Lo que llevas') ?> <span class="muted small">· <?= (int) $cfg['count'] ?> <?= $cfg['count'] === 1 ? te('módulo') : te('módulos') ?></span></h2>
+      <h2><?= e($sumTitle ?? t('Lo que llevas')) ?> <span class="muted small">· <?= (int) $cfg['count'] ?> <?= $cfg['count'] === 1 ? te('módulo') : te('módulos') ?></span></h2>
       <?php foreach ($cfg['walls'] as $w): if (!$w['items']) continue; ?>
         <h3><?= e($w['name']) ?></h3>
         <ul class="sum-list" role="list">

@@ -1,10 +1,16 @@
 <?php // Universal Configurator · Copyright (c) 2026 BionicAdri · Licencia BionicAdri 2.0 (ver LICENSE) ?>
-<?php /** @var array $providers */ ?>
+<?php /** @var array $providers @var bool $team */ ?>
 <section class="auth">
   <div class="auth-intro">
+    <?php if (!empty($team)): ?>
+    <p class="eyebrow"><?= te('Equipo de {e}', ['e' => setting('empresa')]) ?></p>
+    <h1><?= te('Entra para configurar con tus clientes.') ?></h1>
+    <p class="muted"><?= te('Comerciales y administración: con tu cuenta ves tus configuraciones, las aceptas y, si eres administrador, entras al panel.') ?></p>
+    <?php else: ?>
     <p class="eyebrow"><?= te('Configurador') ?></p>
     <h1><?= te('Diseña tu producto y conoce el precio al momento.') ?></h1>
     <p class="muted"><?= te('Elige el modelo, ajusta cada módulo a tu medida y guarda el presupuesto.') ?></p>
+    <?php endif; ?>
   </div>
   <div class="card auth-card">
     <h2><?= te('Entrar') ?></h2>
