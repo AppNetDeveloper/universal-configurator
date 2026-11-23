@@ -74,7 +74,7 @@
         <?php if ($lead['message'] !== ''): ?><br><span class="small">«<?= e($lead['message']) ?>»</span><?php endif; ?></p>
         <a class="small" href="/admin/leads?q=<?= e(rawurlencode($lead['phone'])) ?>"><?= te('Ver en Leads') ?></a></div>
     <?php endif; ?>
-    <?php if (in_array($cfg['status'], ['accepted', 'requested'], true)): ?>
+    <?php if ($cfg['status'] === 'accepted'): ?>
       <form method="post" action="/admin/configuraciones/<?= e($cfg['code']) ?>/trabajo" class="side-block stack">
         <?= csrf_field() ?>
         <h3><?= te('Estado de trabajo') ?></h3>

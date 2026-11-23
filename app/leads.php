@@ -266,8 +266,8 @@ function config_mark(string $code, ?array $viewer, array $in): array
     if (($viewer['kind'] ?? '') !== 'user' || !in_array($viewer['user']['role'] ?? '', ['admin', 'comercial'], true)) {
         throw new UcError(t('Solo el equipo (comercial o administrador) marca el trabajo de una configuración.'), [], 403);
     }
-    if (!in_array($cfg['status'], ['accepted', 'requested'], true)) {
-        throw new UcError(t('La configuración {c} está «{s}»: el estado de trabajo es para las aceptadas o con presupuesto pedido.', ['c' => $cfg['code'], 's' => t(CONFIG_STATUSES[$cfg['status']])]), [], 409);
+    if ($cfg['status'] !== 'accepted') {
+        throw new UcError(t('La configuración {c} está «{s}»: el estado de trabajo es para las aceptadas (un presupuesto pedido se trabaja en su lead: lead_mark).', ['c' => $cfg['code'], 's' => t(CONFIG_STATUSES[$cfg['status']])]), [], 409);
     }
     $d = work_input($in, $cfg);
     update('configurations', $d, 'id = ?', [$cfg['id']]); // updated_at no cambia: no es un cambio de la configuración

@@ -59,7 +59,7 @@ function admin_handle(string $path, string $method): void
                     'users' => (int) val('SELECT COUNT(*) FROM users WHERE active = 1'),
                     'requested' => (int) val("SELECT COUNT(*) FROM configurations WHERE status = 'requested'"),
                     'leads_new' => (int) val("SELECT COUNT(*) FROM leads WHERE work_status = 'nuevo'"),
-                    'pending' => (int) val("SELECT COUNT(*) FROM configurations WHERE status IN ('accepted','requested') AND work_status IN ('nuevo','en_curso')")],
+                    'pending' => (int) val("SELECT COUNT(*) FROM configurations WHERE status = 'accepted' AND work_status IN ('nuevo','en_curso')")],
                 'latest' => config_list(['kind' => 'user', 'user' => $u], [], 1, 8)['items'],
                 'adri' => adri_status(),
             ]);

@@ -84,7 +84,7 @@ function mcp_instructions(): string
     ESCRIBEN: config_create, config_update, config_accept, config_share, config_mark y lead_mark (permiso write). Las demás
     solo leen (read). Aceptar es del equipo (token de un comercial o un admin).
 
-    LO NUEVO, SIN PROCESAR: config_list(pendientes=true) da las aceptadas o con presupuesto pedido cuyo trabajo está
+    LO NUEVO, SIN PROCESAR: config_list(pendientes=true) da las aceptadas cuyo trabajo está
     «nuevo» o «en_curso», las nuevas primero, y cuántas hay (pending). Por cada una: haz lo tuyo (planos, presupuesto…)
     → config_mark(code, work_status="hecho", work_note="Planos enviados"). Los LEADS (clientes que pidieron presupuesto
     desde el configurador, con nombre y teléfono): lead_list(work_status="nuevo") → lead_get → lead_mark. Marcar no toca
@@ -143,9 +143,9 @@ function mcp_tools(): array
             'handler' => fn(array $a) => ['types' => mcp_module_types(isset($a['node_id']) ? parse_int($a['node_id'], 'node_id') : null), 'currency' => 'EUR', 'prices_include_tax' => false],
         ],
         'config_list' => [
-            'description' => 'Úsala para buscar configuraciones y para saber qué hay NUEVO sin procesar (pendientes=true). Las tuyas, o todas si el token es de un admin; las pendientes de trabajar primero y luego de la más nueva a la más vieja, paginadas; «pending» dice cuántas hay pendientes. Filtros: status (draft, requested, accepted, cancelled), work_status (nuevo, en_curso, hecho), pendientes (aceptadas o pedidas con trabajo nuevo o en curso), from y to (AAAA-MM-DD), q (código, nombre, correo o teléfono).',
+            'description' => 'Úsala para buscar configuraciones y para saber qué hay NUEVO sin procesar (pendientes=true: aceptadas con el trabajo nuevo o en curso; lo que piden los clientes, en lead_list). Las tuyas, o todas si el token es de un admin; las pendientes de trabajar primero y luego de la más nueva a la más vieja, paginadas; «pending» dice cuántas hay pendientes. Filtros: status (draft, requested, accepted, cancelled), work_status (nuevo, en_curso, hecho), pendientes (aceptadas con trabajo nuevo o en curso), from y to (AAAA-MM-DD), q (código, nombre, correo o teléfono).',
             'scope' => 'read', 'inputSchema' => $obj(['status' => ['type' => 'string', 'enum' => array_keys(CONFIG_STATUSES)], 'work_status' => ['type' => 'string', 'enum' => array_keys(WORK_STATUSES)],
-                'pendientes' => ['type' => 'boolean', 'description' => 'true: solo lo aceptado o pedido con el trabajo «nuevo» o «en_curso»'],
+                'pendientes' => ['type' => 'boolean', 'description' => 'true: solo lo aceptado con el trabajo «nuevo» o «en_curso»'],
                 'from' => $str('Desde AAAA-MM-DD'), 'to' => $str('Hasta AAAA-MM-DD'),
                 'q' => $str('Texto a buscar'), 'page' => $int('Página (1…)'), 'per_page' => $int('Por página (máx. 100, 25 por defecto)')]),
             'example' => ['pendientes' => true, 'per_page' => 25],
@@ -210,7 +210,7 @@ function mcp_tools(): array
             'handler' => fn(array $a) => config_share((string) $a['code'], mcp_viewer()),
         ],
         'config_mark' => [
-            'description' => 'ESCRIBE (solo el estado de trabajo). Úsala cuando hayas procesado una configuración aceptada o con presupuesto pedido: work_status nuevo | en_curso | hecho y una nota corta (una línea, ≤ 200). No toca el precio, el despiece ni el estado de venta. Queda registrado quién lo marcó (el nombre de este token).',
+            'description' => 'ESCRIBE (solo el estado de trabajo). Úsala cuando hayas procesado una configuración aceptada (un presupuesto pedido se marca en su lead, con lead_mark): work_status nuevo | en_curso | hecho y una nota corta (una línea, ≤ 200). No toca el precio, el despiece ni el estado de venta. Queda registrado quién lo marcó (el nombre de este token).',
             'scope' => 'write', 'inputSchema' => $obj(['code' => $code, 'work_status' => ['type' => 'string', 'enum' => array_keys(WORK_STATUSES)], 'work_note' => $str('Nota corta, una línea (≤ 200)')], ['code', 'work_status']),
             'example' => ['code' => 'UC-7K3F9QXM', 'work_status' => 'hecho', 'work_note' => 'Planos y presupuesto enviados'],
             'handler' => fn(array $a) => ['config' => config_mark((string) $a['code'], mcp_viewer(), array_intersect_key($a, ['work_status' => 1, 'work_note' => 1]))],

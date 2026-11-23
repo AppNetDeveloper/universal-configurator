@@ -116,16 +116,25 @@ check('marcar: solo cambia el trabajo (precio, piezas, estado y updated_at intac
 });
 check_error('un comercial no marca la de otro (ni la ve)', fn() => config_mark($cfgA['code'], $vb, ['work_status' => 'hecho']), 'No existe');
 check_error('un cliente no marca', function () use ($c, $vc, $vadmin) { $x = config_request(config_create($c['blanco'], $vc)['code'], $vc, ['name' => 'X', 'phone' => '600 000 000', 'consent' => 1], false); throttle_clear('lead:' . client_ip_key()); config_mark($x['config']['code'], $vc, ['work_status' => 'hecho']); }, 'equipo');
+check('una pedida no sale en pendientes (se trabaja en su lead) y no se marca como configuración', function () use ($c, $vc, $vadmin) {
+    $x = config_request(config_create($c['blanco'], $vc)['code'], $vc, ['name' => 'Pide', 'phone' => '600 000 001', 'consent' => 1], false);
+    throttle_clear('lead:' . client_ip_key());
+    $codes = array_column(config_list($vadmin, ['pendientes' => true], 1, 100)['items'], 'code');
+    try { config_mark($x['config']['code'], $vadmin, ['work_status' => 'hecho']); return false; } catch (UcError $e) {
+        return eq(false, in_array($x['config']['code'], $codes, true)) && eq(true, str_contains($e->getMessage(), 'lead_mark'))
+            && eq('nuevo', lead_get($x['lead_id'], $vadmin)['work_status']);
+    }
+});
 check_error('un borrador no tiene trabajo que marcar', fn() => config_mark(config_create($c['blanco'], $va)['code'], $va, ['work_status' => 'hecho']), 'aceptadas');
 check_error('estado de trabajo inventado', fn() => config_mark($cfgA['code'], $va, ['work_status' => 'listo']), 'nuevo, en_curso, hecho');
 check_error('nota de más de 200', fn() => config_mark($cfgA['code'], $va, ['work_status' => 'hecho', 'work_note' => str_repeat('x', 201)]), '200');
 check_error('campo desconocido = error', fn() => config_mark($cfgA['code'], $va, ['work_status' => 'hecho', 'prioridad' => 1]), 'prioridad');
 check('la nota es de una línea', fn() => eq('a b', config_mark($cfgA['code'], $va, ['work_status' => 'en_curso', 'work_note' => "a\nb"])['work_note']));
-check('pendientes: aceptadas o pedidas con nuevo/en curso, primero las nuevas, y cuántas hay', function () use ($va, $vadmin) {
+check('pendientes: solo aceptadas con nuevo/en curso (las pedidas van por su lead), primero las nuevas, y cuántas hay', function () use ($va, $vadmin) {
     $l = config_list($vadmin, ['pendientes' => true]);
     $ws = array_column($l['items'], 'work_status');
     $sorted = $ws; usort($sorted, fn($x, $y) => ['nuevo' => 0, 'en_curso' => 1][$x] <=> ['nuevo' => 0, 'en_curso' => 1][$y]);
-    return eq(true, $l['total'] > 0) && eq($l['total'], $l['pending']) && eq($sorted, $ws) && eq([], array_diff(array_unique(array_column($l['items'], 'status')), ['accepted', 'requested']))
+    return eq(true, $l['total'] > 0) && eq($l['total'], $l['pending']) && eq($sorted, $ws) && eq([], array_diff(array_unique(array_column($l['items'], 'status')), ['accepted']))
         && eq(1, config_list($va, ['work_status' => 'en_curso'])['total']);
 });
 

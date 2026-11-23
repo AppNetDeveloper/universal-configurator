@@ -49,7 +49,7 @@ catalog_tree → module_types (node_id) → config_create → config_update → 
 
 ## Trabajar lo nuevo (sin procesar)
 
-Cada configuración aceptada (o con el presupuesto pedido por el cliente) y cada lead llevan un **estado de trabajo**,
+Cada configuración aceptada y cada lead (un cliente que pidió el presupuesto) llevan un **estado de trabajo**,
 aparte del estado de venta: `work_status` = `nuevo` → `en_curso` → `hecho`, con `work_note` (una línea, ≤ 200),
 `work_by` (quién lo marcó: la persona o el nombre del token) y `work_at`. Nace «nuevo» al aceptar y al entrar un lead.
 
@@ -142,7 +142,7 @@ Llamada real: `module_types {"node_id": 5}`. Respuesta (un tipo, recortado):
 **Filtros:**
 - `status`: `draft`, `requested` (presupuesto pedido por el cliente), `accepted` o `cancelled`;
 - `work_status`: `nuevo`, `en_curso` o `hecho`;
-- `pendientes`: `true` = aceptadas o pedidas con el trabajo `nuevo` o `en_curso`;
+- `pendientes`: `true` = aceptadas con el trabajo `nuevo` o `en_curso` (lo que piden los clientes está en `lead_list`);
 - `from` y `to`: fecha de creación, en formato `AAAA-MM-DD`;
 - `q`: código, nombre, correo o teléfono;
 - `page` y `per_page` (como mucho 100).
@@ -292,7 +292,7 @@ sin datos personales ni en la URL ni en la página; se construye con la direcci�
 
 ### `config_mark` (write)
 
-**Cuándo:** al terminar (o empezar) lo tuyo con una configuración aceptada o pedida. **Parámetros:** `code`,
+**Cuándo:** al terminar (o empezar) lo tuyo con una configuración aceptada (las pedidas, por su lead). **Parámetros:** `code`,
 `work_status` (`nuevo`, `en_curso`, `hecho`) y `work_note` (opcional, una línea, ≤ 200). Un comercial solo marca las
 suyas. **Devuelve:** la configuración con `work_status`, `work_note`, `work_by` y `work_at`.
 

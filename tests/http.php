@@ -508,6 +508,21 @@ check('cada pantalla del cliente pesa menos de 100 KB (HTML + CSS + JS, sin comp
     if (max($sizes) + $assets >= 100 * 1024) throw new RuntimeException('pesa ' . (max($sizes) + $assets) . ' bytes');
     return true;
 });
+check('deshacer por HTTP: cambiar un ancho, el botón aparece al recargar, y /undo lo devuelve (el precio, del servidor)', function () use (&$guestB, &$gcode) {
+    $p = $guestB->get("/configurar/$gcode")['body'];
+    preg_match('#<script type="application/json" id="uc-data">(.*?)</script>#s', $p, $m);
+    $d = json_decode($m[1], true);
+    $it = $d['config']['walls'][0]['items'][0];
+    $before = $d['config']['total_cents'];
+    $hiddenBefore = (bool) preg_match('#id="undo"[^>]*hidden#', $p);
+    $r1 = $guestB->api('POST', "/api/configurations/$gcode/ops", ['op' => 'set_width', 'item_id' => $it['id'], 'width_cm' => $it['width_cm'] + 10], $d['csrf']);
+    $shown = !preg_match('#id="undo"[^>]*hidden#', $guestB->get("/configurar/$gcode")['body']);
+    $r2 = $guestB->api('POST', "/api/configurations/$gcode/undo", [], $d['csrf']);
+    $r3 = $guestB->api('POST', "/api/configurations/$gcode/undo", [], $d['csrf']);
+    return eq(true, $hiddenBefore) && eq(200, $r1['status']) && eq(true, $shown) && eq(200, $r2['status'])
+        && eq($it['width_cm'], $r2['json']['config']['walls'][0]['items'][0]['width_cm']) && eq($before, $r2['json']['config']['total_cents'])
+        && eq(409, $r3['status']) && eq(true, str_contains($r3['json']['error'], 'nada que deshacer'));
+});
 check('paso 3 del invitado: «Quiero este presupuesto», sin «Aceptar»; aceptar a mano da 403', function () use (&$guestB, &$gcode) {
     $p = $guestB->get("/configurar/$gcode/resumen")['body'];
     $acc = $guestB->post("/configurar/$gcode/aceptar", ['_csrf' => Browser::csrf($p)]);
@@ -568,7 +583,9 @@ check('panel: ficha de una pedida con «Aceptar», lead y estado de trabajo; ace
     $adm->post("/admin/configuraciones/$gcode/trabajo", ['_csrf' => $adminCsrf, 'work_status' => 'hecho', 'work_note' => 'Planos enviados']);
     $list = $adm->get('/admin/configuraciones?work_status=hecho')['body'];
     $pend = $adm->get('/admin/configuraciones?pendientes=1')['body'];
-    return eq(true, str_contains($p, 'Aceptar (cerrar la venta)') && str_contains($p, 'Rocío Ibáñez') && str_contains($p, 'Estado de trabajo'))
+    $acc = $adm->get("/admin/configuraciones/$gcode")['body'];
+    return eq(true, str_contains($p, 'Aceptar (cerrar la venta)') && str_contains($p, 'Rocío Ibáñez')) && eq(false, str_contains($p, 'Estado de trabajo'))
+        && eq(true, str_contains($acc, 'Estado de trabajo'))
         && eq(true, str_contains($list, $gcode) && str_contains($list, 'Planos enviados')) && eq(false, str_contains($pend, $gcode));
 });
 check('Adri: con un token usado hace poco, «Adri conectada» y sin publicidad; si no, la tarjeta y las acciones apagadas', function () use ($adm, $data, &$gcode) {

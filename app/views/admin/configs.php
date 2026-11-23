@@ -15,6 +15,6 @@ $qs = http_build_query(array_filter($filters, fn($v) => $v !== ''));
   <button class="btn btn-primary" type="submit"><?= te('Filtrar') ?></button>
   <?php if ($qs): ?><a class="btn btn-ghost" href="/admin/configuraciones"><?= te('Quitar filtros') ?></a><?php endif; ?>
 </form>
-<p class="small muted"><?= te('{n} configuraciones · {p} pendientes de trabajar (aceptadas o pedidas, nuevas o en curso)', ['n' => $list['total'], 'p' => $list['pending'] ?? 0]) ?></p>
+<p class="small muted"><?= te('{n} configuraciones · {p} aceptadas pendientes de trabajar (nuevas o en curso; lo que piden los clientes está en Leads)', ['n' => $list['total'], 'p' => $list['pending'] ?? 0]) ?></p>
 <?php include __DIR__ . '/_config_table.php'; ?>
 <?php if ($list['pages'] > 1): ?><p class="pager"><?php for ($p = 1; $p <= $list['pages']; $p++): ?><a href="?<?= e(http_build_query(array_filter($filters, fn($v) => $v !== '') + ['page' => $p])) ?>"<?= $p === $list['page'] ? ' aria-current="page"' : '' ?>><?= $p ?></a><?php endfor; ?></p><?php endif; ?>

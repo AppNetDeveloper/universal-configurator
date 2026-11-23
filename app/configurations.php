@@ -306,9 +306,9 @@ function config_list(?array $viewer, array $f, int $page = 1, int $perPage = 25)
     }
     $ws = (string) ($f['work_status'] ?? '');
     if ($ws !== '') { work_status_check($ws); $where[] = 'c.work_status = ?'; $args[] = $ws; }
-    // Pendientes de trabajar: aceptadas (o con presupuesto pedido) con el trabajo «nuevo» o «en curso».
+    // Pendientes de trabajar: aceptadas con el trabajo «nuevo» o «en curso» (lo pedido por el cliente va en los leads).
     $pend = !empty($f['pendientes']);
-    if ($pend) $where[] = "c.status IN ('accepted','requested') AND c.work_status IN ('nuevo','en_curso')";
+    if ($pend) $where[] = "c.status = 'accepted' AND c.work_status IN ('nuevo','en_curso')";
     foreach (['from' => '>=', 'to' => '<='] as $k => $op) {
         $d = trim((string) ($f[$k] ?? ''));
         if ($d === '') continue;
@@ -329,7 +329,7 @@ function config_list(?array $viewer, array $f, int $page = 1, int $perPage = 25)
     $pages = (int) ceil($total / $perPage);
     $page = max(1, $page);
     // Las pendientes primero (nuevo, luego en curso); dentro, las más recientes.
-    $order = "CASE WHEN c.status IN ('accepted','requested') AND c.work_status = 'nuevo' THEN 0 WHEN c.status IN ('accepted','requested') AND c.work_status = 'en_curso' THEN 1 ELSE 2 END, c.created_at DESC, c.id DESC";
+    $order = "CASE WHEN c.status = 'accepted' AND c.work_status = 'nuevo' THEN 0 WHEN c.status = 'accepted' AND c.work_status = 'en_curso' THEN 1 ELSE 2 END, c.created_at DESC, c.id DESC";
     $rs = rows("SELECT c.* FROM configurations c $sqlWhere ORDER BY $order LIMIT $perPage OFFSET " . (($page - 1) * $perPage), $args);
     $items = array_map(function ($cfg) {
         $p = config_pricing($cfg);
@@ -341,7 +341,7 @@ function config_list(?array $viewer, array $f, int $page = 1, int $perPage = 25)
             + work_view($cfg);
     }, $rs);
     $pendingWhere = array_slice($where, 0, $scopeCount);
-    $pendingWhere[] = "c.status IN ('accepted','requested') AND c.work_status IN ('nuevo','en_curso')";
+    $pendingWhere[] = "c.status = 'accepted' AND c.work_status IN ('nuevo','en_curso')";
     $pending = (int) val('SELECT COUNT(*) FROM configurations c WHERE ' . implode(' AND ', $pendingWhere), array_slice($args, 0, $scopeArgs));
     return ['items' => $items, 'page' => $page, 'per_page' => $perPage, 'total' => $total, 'pages' => $pages, 'pending' => $pending];
 }
