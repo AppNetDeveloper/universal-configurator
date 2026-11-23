@@ -48,7 +48,33 @@ foreach ($tiers as $tr) $groups[$tr['node_id'] === null ? 0 : (int) $tr['node_id
         <button class="btn btn-primary" type="submit">+ <?= te('Añadir tramo') ?></button>
       </form>
     </section>
-    <section class="card" id="despiece">
+  </div>
+  <form method="post" action="/admin/tipos/<?= (int) $type['id'] ?>" class="card stack">
+    <?= csrf_field() ?>
+    <h2><?= te('Datos') ?></h2>
+    <label><?= te('Nombre') ?><input name="name" required maxlength="120" value="<?= e(old('name', $type['name'])) ?>"></label>
+    <label><?= te('Referencia') ?><input name="ref" maxlength="60" value="<?= e(old('ref', $type['ref'])) ?>"></label>
+    <label><?= te('Familia') ?><input name="family" maxlength="60" value="<?= e(old('family', $type['family'])) ?>"></label>
+    <h3><?= te('Medidas por defecto (mm)') ?></h3>
+    <div class="row-form tight">
+      <label><?= te('Ancho') ?><input type="number" name="width_mm" min="1" class="w-num" value="<?= e(old('width_mm', (string) $type['width_mm'])) ?>"></label>
+      <label><?= te('Alto') ?><input type="number" name="height_mm" min="1" class="w-num" value="<?= e(old('height_mm', (string) $type['height_mm'])) ?>"></label>
+      <label><?= te('Fondo') ?><input type="number" name="depth_mm" min="1" class="w-num" value="<?= e(old('depth_mm', (string) $type['depth_mm'])) ?>"></label>
+    </div>
+    <div class="row-form tight">
+      <label><?= te('Ancho mínimo') ?><input type="number" name="min_width_mm" min="1" class="w-num" value="<?= e(old('min_width_mm', (string) $type['min_width_mm'])) ?>"></label>
+      <label><?= te('Ancho máximo') ?><input type="number" name="max_width_mm" min="1" class="w-num" value="<?= e(old('max_width_mm', (string) $type['max_width_mm'])) ?>"></label>
+    </div>
+    <div class="row-form tight">
+      <label><?= te('Tablero T') ?><input name="board_mm" inputmode="decimal" class="w-num" value="<?= e(old('board_mm', mm_text((float) $type['board_mm']))) ?>"></label>
+      <label><?= te('Trasera B') ?><input name="back_mm" inputmode="decimal" class="w-num" value="<?= e(old('back_mm', mm_text((float) $type['back_mm']))) ?>"></label>
+    </div>
+    <label><?= te('Orden') ?><input type="number" name="sort" min="0" value="<?= e(old('sort', (string) $type['sort'])) ?>"></label>
+    <label><?= te('Descripción') ?><textarea name="description" rows="3"><?= e(old('description', $type['description'])) ?></textarea></label>
+    <button class="btn btn-primary" type="submit"><?= te('Guardar') ?></button>
+  </form>
+</div>
+<section class="card parts-card" id="despiece">
       <h2><?= te('Despiece') ?></h2>
       <p class="hint"><?= te('Fórmulas con W (ancho), H (alto), D (fondo) del módulo en mm, T (tablero) y B (trasera); números, + - * / y paréntesis. Se comprueban al guardar con las medidas por defecto. Las piezas se calculan redondeadas a 0,5 mm.') ?></p>
       <div class="table-scroll">
@@ -87,29 +113,3 @@ foreach ($tiers as $tr) $groups[$tr['node_id'] === null ? 0 : (int) $tr['node_id
       </div>
       <p class="small muted" data-parts-vars data-url="/admin/tipos/<?= (int) $type['id'] ?>/despiece/probar" data-csrf="<?= e(csrf_token()) ?>"><?= te('Medidas por defecto: W={w}, H={h}, D={d}, T={t}, B={b} mm.', ['w' => $type['width_mm'], 'h' => $type['height_mm'], 'd' => $type['depth_mm'], 't' => mm_text((float) $type['board_mm']), 'b' => mm_text((float) $type['back_mm'])]) ?></p>
     </section>
-  </div>
-  <form method="post" action="/admin/tipos/<?= (int) $type['id'] ?>" class="card stack">
-    <?= csrf_field() ?>
-    <h2><?= te('Datos') ?></h2>
-    <label><?= te('Nombre') ?><input name="name" required maxlength="120" value="<?= e(old('name', $type['name'])) ?>"></label>
-    <label><?= te('Referencia') ?><input name="ref" maxlength="60" value="<?= e(old('ref', $type['ref'])) ?>"></label>
-    <label><?= te('Familia') ?><input name="family" maxlength="60" value="<?= e(old('family', $type['family'])) ?>"></label>
-    <h3><?= te('Medidas por defecto (mm)') ?></h3>
-    <div class="row-form tight">
-      <label><?= te('Ancho') ?><input type="number" name="width_mm" min="1" class="w-num" value="<?= e(old('width_mm', (string) $type['width_mm'])) ?>"></label>
-      <label><?= te('Alto') ?><input type="number" name="height_mm" min="1" class="w-num" value="<?= e(old('height_mm', (string) $type['height_mm'])) ?>"></label>
-      <label><?= te('Fondo') ?><input type="number" name="depth_mm" min="1" class="w-num" value="<?= e(old('depth_mm', (string) $type['depth_mm'])) ?>"></label>
-    </div>
-    <div class="row-form tight">
-      <label><?= te('Ancho mínimo') ?><input type="number" name="min_width_mm" min="1" class="w-num" value="<?= e(old('min_width_mm', (string) $type['min_width_mm'])) ?>"></label>
-      <label><?= te('Ancho máximo') ?><input type="number" name="max_width_mm" min="1" class="w-num" value="<?= e(old('max_width_mm', (string) $type['max_width_mm'])) ?>"></label>
-    </div>
-    <div class="row-form tight">
-      <label><?= te('Tablero T') ?><input name="board_mm" inputmode="decimal" class="w-num" value="<?= e(old('board_mm', mm_text((float) $type['board_mm']))) ?>"></label>
-      <label><?= te('Trasera B') ?><input name="back_mm" inputmode="decimal" class="w-num" value="<?= e(old('back_mm', mm_text((float) $type['back_mm']))) ?>"></label>
-    </div>
-    <label><?= te('Orden') ?><input type="number" name="sort" min="0" value="<?= e(old('sort', (string) $type['sort'])) ?>"></label>
-    <label><?= te('Descripción') ?><textarea name="description" rows="3"><?= e(old('description', $type['description'])) ?></textarea></label>
-    <button class="btn btn-primary" type="submit"><?= te('Guardar') ?></button>
-  </form>
-</div>

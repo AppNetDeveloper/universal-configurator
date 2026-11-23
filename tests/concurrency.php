@@ -39,4 +39,20 @@ check('ningún error interno (500) bajo concurrencia', fn() => eq(0, $count500, 
 check('se aceptaron todas (una vez cada una) y los demás recibieron 409', fn() => eq(5, count(array_filter($results, fn($l) => $l === 'ok')) >= 5 ? 5 : -1)
     && eq(true, in_array('409', $results, true)));
 
+// Reserva atómica del presupuesto de la cookie de confianza: 12 intentos fallidos a la vez con la misma cookie
+$ana = fx_user('comercial', 'ana@x.test', 'clave-de-ana');
+login_attempt('ana@x.test', 'clave-de-ana');
+$cookie = (string) $GLOBALS['uc_trust_cookie'];
+q('DELETE FROM throttle'); q('DELETE FROM login_backoff');
+$at = microtime(true) + 1.0;
+$procs = [];
+for ($i = 0; $i < 12; $i++) {
+    $procs[] = [proc_open([PHP_BINARY, __DIR__ . '/_login_worker.php', 'ana@x.test', 'mala', $cookie, "10.20.0.$i", (string) $at], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pp, null, ['UC_DATA' => UC_DATA]), $pp];
+}
+$lines = [];
+foreach ($procs as [$p, $pp]) { $lines[] = trim(stream_get_contents($pp[1]) . stream_get_contents($pp[2])); proc_close($p); }
+$trusted = count(array_filter($lines, fn($l) => str_starts_with($l, 'T')));
+check('12 intentos a la vez con la misma cookie: los «de confianza» no pasan del presupuesto (3 seguidos + el que revoca = 4)', fn() => eq(true, $trusted <= 4, "$trusted de confianza: " . implode(' | ', $lines)));
+check('ninguno de esos intentos dio un error interno', fn() => eq(0, count(array_filter($lines, fn($l) => str_contains($l, '500')))));
+
 done();

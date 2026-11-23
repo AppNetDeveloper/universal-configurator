@@ -141,7 +141,9 @@ function login_attempt(string $email, string $password): array
     $ip = client_ip_key();
     $u = user_by_email($email);
     $cookie = (string) ($_COOKIE[TRUST_COOKIE] ?? '');
-    $trusted = $u && trusted_device_ok($cookie, $email);
+    $cookieFor = $cookie !== '' ? trusted_device_user($cookie) : null;
+    $trusted = $u && $cookieFor === (int) $u['id'] && trusted_device_reserve($cookie, $mailHash);
+    $GLOBALS['uc_login_trusted'] = $trusted;
     $boKey = $mailHash . ':' . $ip;
     $blocked = !throttle('login-ip:' . $ip, 20, 900) || !throttle('login-mailip:' . $mailHash . ':' . $ip, 5, 900);
     if (!$trusted) {
@@ -156,14 +158,15 @@ function login_attempt(string $email, string $password): array
     }
     $ok = password_verify($password, $u['password_hash'] ?? login_dummy_hash());
     if (!$u || !$ok || !$u['active'] || $u['auth_source'] !== 'local' || $u['password_hash'] === null) {
-        if ($trusted) trusted_device_fail($cookie, $mailHash);
+        if ($trusted) trusted_device_fail($cookie); // la reserva se queda gastada (cuenta como fallo)
         else login_fail($boKey, $mailHash);
         audit('user.login_failed', $email);
         throw new UcError(t('Correo o contraseña incorrectos.'), [], 401);
     }
     q('DELETE FROM login_backoff WHERE key = ?', [$boKey]);
     throttle_clear('login-mailip:' . $mailHash . ':' . $ip);
-    if ($cookie !== '') throttle_clear('trust-streak:' . hash('sha256', $cookie));
+    if ($trusted) trusted_device_release($cookie, $mailHash); // contraseña buena: se devuelve la reserva y se borra la racha
+    elseif ($cookie !== '' && $cookieFor === (int) $u['id']) throttle_clear('trust-streak:' . hash('sha256', $cookie));
     if (password_needs_rehash($u['password_hash'], PASSWORD_BCRYPT, PASSWORD_OPTS)) {
         q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($password, PASSWORD_BCRYPT, PASSWORD_OPTS), $u['id']]);
     }
@@ -207,23 +210,54 @@ function trusted_device_ok(string $cookie, string $email): bool
     return !($f && (int) $f['reset_at'] >= time() && (int) $f['hits'] >= TRUST_FAIL_BUDGET);
 }
 
-/** Fallo con cookie de confianza: gasta su presupuesto y, al pasar de 3 seguidos, la revoca (se borra y deja de valer). */
-function trusted_device_fail(string $cookie, string $mailHash): void
+/**
+ * Reserva ATÓMICA (una transacción BEGIN IMMEDIATE) del presupuesto de la cookie antes de mirar la contraseña:
+ * suma un intento al presupuesto de la cuenta (10 por hora) y a la racha de esa cookie (como mucho 3 fallos seguidos y
+ * el que la revoca). Si ya estaba agotado o la cookie está revocada, el intento va como no confiable. Así, aunque lleguen
+ * muchos intentos a la vez con la misma cookie, los «de confianza» no pasan del presupuesto.
+ */
+function trusted_device_reserve(string $cookie, string $mailHash): bool
 {
-    throttle('trust-fails:' . $mailHash, PHP_INT_MAX, 3600);
-    $key = 'trust-streak:' . hash('sha256', $cookie);
-    throttle($key, PHP_INT_MAX, TRUST_DAYS * 86400);
-    if ((int) val('SELECT hits FROM throttle WHERE key = ?', [$key]) > TRUST_FAIL_STREAK) {
-        q('INSERT OR REPLACE INTO throttle (key, hits, reset_at) VALUES (?, 1, ?)', ['trust-revoked:' . hash('sha256', $cookie), time() + TRUST_DAYS * 86400]);
-        throttle_clear($key);
+    $ch = hash('sha256', $cookie);
+    return (bool) tx(function () use ($ch, $mailHash) {
+        if (val('SELECT 1 FROM throttle WHERE key = ? AND reset_at >= ?', ['trust-revoked:' . $ch, time()])) return false;
+        throttle('trust-fails:' . $mailHash, PHP_INT_MAX, 3600);
+        throttle('trust-streak:' . $ch, PHP_INT_MAX, TRUST_DAYS * 86400);
+        $fails = (int) val('SELECT hits FROM throttle WHERE key = ?', ['trust-fails:' . $mailHash]);
+        $streak = (int) val('SELECT hits FROM throttle WHERE key = ?', ['trust-streak:' . $ch]);
+        return $fails <= TRUST_FAIL_BUDGET && $streak <= TRUST_FAIL_STREAK + 1;
+    });
+}
+
+/** Contraseña buena con cookie de confianza: devuelve la reserva del presupuesto y borra la racha de esa cookie. */
+function trusted_device_release(string $cookie, string $mailHash): void
+{
+    q('UPDATE throttle SET hits = MAX(hits - 1, 0) WHERE key = ?', ['trust-fails:' . $mailHash]);
+    throttle_clear('trust-streak:' . hash('sha256', $cookie));
+}
+
+function trusted_device_revoke(string $cookie): void
+{
+    q('INSERT OR REPLACE INTO throttle (key, hits, reset_at) VALUES (?, 1, ?)', ['trust-revoked:' . hash('sha256', $cookie), time() + TRUST_DAYS * 86400]);
+    throttle_clear('trust-streak:' . hash('sha256', $cookie));
+}
+
+/** Fallo con cookie de confianza (ya reservado): al pasar de 3 fallos seguidos con la misma cookie, se revoca. */
+function trusted_device_fail(string $cookie): void
+{
+    if ((int) val('SELECT hits FROM throttle WHERE key = ?', ['trust-streak:' . hash('sha256', $cookie)]) > TRUST_FAIL_STREAK) {
+        trusted_device_revoke($cookie);
         unset($_COOKIE[TRUST_COOKIE]);
         if (PHP_SAPI !== 'cli' && !headers_sent()) setcookie(TRUST_COOKIE, '', ['expires' => 1, 'path' => '/', 'httponly' => true, 'secure' => is_https(), 'samesite' => 'Lax']);
         audit('user.trust_revoked', 'dispositivo de confianza revocado tras fallos seguidos');
     }
 }
 
+/** Emite una cookie nueva y revoca la anterior de ese navegador (una copia robada de la vieja deja de valer). */
 function trusted_device_set(int $userId): void
 {
+    $old = (string) ($_COOKIE[TRUST_COOKIE] ?? '');
+    if ($old !== '' && trusted_device_user($old) === $userId) trusted_device_revoke($old);
     $v = trusted_device_value($userId, time() + TRUST_DAYS * 86400, (int) (user_by_id($userId)['session_version'] ?? 0));
     $GLOBALS['uc_trust_cookie'] = $v;
     if (PHP_SAPI !== 'cli' && !headers_sent()) {
