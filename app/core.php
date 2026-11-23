@@ -49,11 +49,18 @@ function db_path(): string
     return UC_DATA . '/configurator.sqlite';
 }
 
+/** Cierra la conexión (la siguiente llamada a db() abre otra): hace falta tras sustituir el archivo de la base. */
+function db_close(): void
+{
+    $GLOBALS['__uc_pdo'] = null;
+    setting('__reset');
+}
+
 function db(): PDO
 {
-    static $pdo = null;
+    $pdo = $GLOBALS['__uc_pdo'] ?? null;
     if ($pdo === null) {
-        $pdo = new PDO('sqlite:' . db_path(), null, null, [
+        $pdo = $GLOBALS['__uc_pdo'] = new PDO('sqlite:' . db_path(), null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
@@ -344,6 +351,8 @@ function settings_defaults(): array
         'mail_transport' => 'mail',  // mail | smtp | log (log = data/mail.log, para pruebas)
         'mail_from' => '', 'smtp_host' => '', 'smtp_port' => '587', 'smtp_encryption' => 'tls', 'smtp_username' => '', 'smtp_password' => '',
         'bionicadri_url' => '', 'bionicadri_client_id' => '', 'url_publica' => '',
+        'backup_auto' => 'off', 'backup_keep' => '7',   // copias automáticas: off | daily | weekly, y cuántas se guardan
+        'update_check_daily' => '0',                    // buscar versión nueva sola una vez al día (la única llamada de salida)
     ];
 }
 

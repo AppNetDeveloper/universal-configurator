@@ -26,6 +26,11 @@ require UC_ROOT . '/app/admin.php';
 require UC_ROOT . '/app/install.php';
 require UC_ROOT . '/app/leads.php';
 require UC_ROOT . '/app/sample.php';
+require_once UC_ROOT . '/app/maintenance.php';
+require_once UC_ROOT . '/app/update_rollback.php';
+require_once UC_ROOT . '/app/update_finish.php';
+require UC_ROOT . '/app/backup.php';
+require UC_ROOT . '/app/update.php';
 
 date_default_timezone_set((string) config('timezone', 'Europe/Madrid'));
 mb_internal_encoding('UTF-8');
@@ -53,6 +58,7 @@ function uc_handle_request(): void
         security_session_check();
         if ($path === '/admin' || str_starts_with($path, '/admin/')) { admin_handle(substr($path, 6) ?: '/', $method); return; }
         front_handle($path, $method);
+        uc_after_response();
     } catch (UcError $ex) {
         if ($ex->status === 419) { http_response_code(419); header('Content-Type: text/html; charset=utf-8'); echo e($ex->getMessage()); return; }
         error_log('[universal-configurator] ' . $ex->getMessage());
@@ -68,6 +74,21 @@ function uc_handle_request(): void
         if (!headers_sent()) http_response_code(500);
         echo config('debug') ? '<pre>' . e((string) $ex) . '</pre>' : 'Error interno del servidor.';
     }
+}
+
+/**
+ * Tareas «al paso», DESPUÉS de responder (solo con PHP-FPM, que deja cerrar la respuesta antes: nadie espera): la copia
+ * automática si toca y, si el administrador lo activó, buscar versión nueva una vez al día. Sin FPM, usa cron con
+ * `php bin/uc backup --auto`. Nunca lanza.
+ */
+function uc_after_response(): void
+{
+    if (PHP_SAPI === 'cli' || !function_exists('fastcgi_finish_request')) return;
+    if (setting('backup_auto') === 'off' && !setting_bool('update_check_daily')) return;
+    session_write_close();
+    fastcgi_finish_request();
+    backup_auto_tick();
+    update_daily_tick();
 }
 
 /** 503 sin trazas, con Retry-After; JSON en /api y /mcp. */

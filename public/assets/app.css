@@ -499,3 +499,11 @@ body:not(:has(.totalbar)) .foot { padding-bottom: var(--space-5); }
 .lead-form-row .grow { flex: 1 1 260px; }
 .lead-form-row select, .lead-form-row input { margin-top: 6px; }
 @media (max-width: 860px) { .adri-card { grid-template-columns: 1fr; } }
+/* Copias y actualizaciones */
+.key-warn { border-color: #FDE68A; background: var(--warn-soft); }
+.bk-actions { text-align: left; }
+.bk-actions[open] { min-width: 280px; }
+.bk-actions form { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.update-v { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 var(--space-3); }
+.update-new { border-top: 1px solid var(--line); padding-top: var(--space-3); }
+.changelog { white-space: pre-wrap; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px; font: .85rem/1.5 var(--mono); max-height: 320px; overflow: auto; }

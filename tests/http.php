@@ -592,6 +592,38 @@ check('al cliente final, nada de publicidad de Adri: solo el pie de la licencia'
     return eq(true, str_contains($pages[1], 'Hecho con Universal Configurator'));
 });
 
+check('copias: el panel hace una copia, la lista y la descarga solo por POST con sesión de admin', function () use ($adm, $adminCsrf, &$ana, $BASE) {
+    $adm->post('/admin/copias/crear', ['_csrf' => $adminCsrf]);
+    $p = $adm->get('/admin/copias')['body'];
+    if (!preg_match('#/admin/copias/(uc-copia-[0-9a-z-]+\.zip)/descargar#', $p, $m)) throw new RuntimeException('sin copia en la lista');
+    $get = $adm->get("/admin/copias/{$m[1]}/descargar");
+    $dl = $adm->post("/admin/copias/{$m[1]}/descargar", ['_csrf' => $adminCsrf]);
+    $enc = $adm->post("/admin/copias/{$m[1]}/descargar", ['_csrf' => $adminCsrf, 'password' => 'una-clave-larga-1']);
+    $anon = (new Browser($BASE))->post("/admin/copias/{$m[1]}/descargar", ['_csrf' => 'x']);
+    return eq(true, str_contains($p, 'contiene las claves')) && eq(true, $get['status'] >= 400) && eq(200, $dl['status']) && eq("PK\x03\x04", substr($dl['body'], 0, 4))
+        && eq(true, str_contains($dl['headers'], 'attachment')) && eq('UCBK1', substr($enc['body'], 0, 5)) && eq(true, str_contains($enc['headers'], '.ucbk'))
+        && eq(true, in_array($anon['status'], [303, 403, 419], true)) && eq(false, str_starts_with($anon['body'], 'PK'));
+});
+check('copias: restaurar sin escribir RESTAURAR no hace nada', function () use ($adm, $adminCsrf) {
+    $p = $adm->get('/admin/copias')['body'];
+    preg_match('#/admin/copias/(uc-copia-[0-9a-z-]+\.zip)/restaurar#', $p, $m);
+    $before = $adm->get('/admin/configuraciones')['body'];
+    $adm->post("/admin/copias/{$m[1]}/restaurar", ['_csrf' => $adminCsrf, 'confirm' => 'si']);
+    $after = $adm->get('/admin/copias')['body'];
+    return eq(true, str_contains($after, 'escribe RESTAURAR')) && eq(substr_count($before, 'UC-'), substr_count($adm->get('/admin/configuraciones')['body'], 'UC-'));
+});
+check('actualizaciones: el panel dice que es la única conexión de salida y que no se actualiza sola', function () use ($adm) {
+    $p = $adm->get('/admin/actualizaciones')['body'];
+    return eq(true, str_contains($p, 'única conexión') && str_contains($p, 'nunca se actualiza sola') && str_contains($p, 'Buscar actualizaciones'));
+});
+check('mantenimiento: con data/maintenance.json vigente, 503 «Volvemos en un momento»; al quitarlo, normal', function () use ($data, $BASE) {
+    file_put_contents("$data/maintenance.json", json_encode(['since' => time(), 'until' => time() + 60, 'reason' => 'prueba']));
+    $r = (new Browser($BASE))->get('/');
+    unlink("$data/maintenance.json");
+    $r2 = (new Browser($BASE))->get('/');
+    return eq(503, $r['status']) && eq(true, str_contains($r['body'], 'Volvemos en un momento')) && eq(200, $r2['status']);
+});
+
 check('G: con la base bloqueada durante una actualización de esquema, 503 «actualizando» sin trazas', function () use ($BASE, $data) {
     $pdo = new PDO('sqlite:' . $data . '/configurator.sqlite');
     $pdo->exec("UPDATE meta SET value = '4' WHERE key = 'schema_version'");

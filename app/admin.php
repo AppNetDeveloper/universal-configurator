@@ -10,7 +10,8 @@ declare(strict_types=1);
 
 const ADMIN_SECTIONS = [
     '/' => 'Inicio', '/catalogo' => 'Catálogo', '/tipos' => 'Tipos y tramos', '/configuraciones' => 'Configuraciones', '/leads' => 'Leads',
-    '/usuarios' => 'Personas', '/ajustes' => 'Ajustes', '/tokens' => 'Tokens MCP', '/actividad' => 'Actividad',
+    '/usuarios' => 'Personas', '/ajustes' => 'Ajustes', '/tokens' => 'Tokens MCP', '/copias' => 'Copias de seguridad', '/actualizaciones' => 'Actualizaciones',
+    '/actividad' => 'Actividad',
 ];
 
 function admin_render(string $view, string $section, array $vars = [], int $status = 200): void
@@ -286,6 +287,83 @@ function admin_handle(string $path, string $method): void
             admin_back('/leads' . (isset($_POST['back']) && preg_match('#^\?[a-z0-9_=&%-]*$#i', (string) $_POST['back']) ? (string) $_POST['back'] : ''));
         }
 
+        // ---- copias de seguridad
+        if ($path === '/copias' && !$post) {
+            admin_render('backups', '/copias', ['title' => t('Copias de seguridad'), 'backups' => backup_list(),
+                'lastAuto' => (int) val("SELECT value FROM meta WHERE key = 'last_auto_backup'")]);
+            return;
+        }
+        if ($path === '/copias/crear' && $post) {
+            try { $b = backup_create(); } catch (UcError $ex) { admin_back('/copias', $ex); }
+            flash(t('Copia hecha: {n} ({s}).', ['n' => $b['name'], 's' => bk_human_size($b['size'])]));
+            admin_back('/copias');
+        }
+        if ($path === '/copias/ajustes' && $post) {
+            $mode = (string) ($_POST['backup_auto'] ?? 'off');
+            $keep = (int) ($_POST['backup_keep'] ?? 7);
+            if (!in_array($mode, ['off', 'daily', 'weekly'], true)) admin_back('/copias', new UcError(t('Frecuencia no válida.')));
+            if ($keep < 1 || $keep > 365) admin_back('/copias', new UcError(t('Guarda entre 1 y 365 copias automáticas.')));
+            settings_save(['backup_auto' => $mode, 'backup_keep' => (string) $keep]);
+            audit('backup.settings', "$mode · $keep");
+            flash(t('Ajustes de las copias guardados.'));
+            admin_back('/copias');
+        }
+        if ($path === '/copias/subir' && $post) {
+            try {
+                $f = $_FILES['copia'] ?? [];
+                if ((int) ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) throw new UcError(t('No se pudo subir el archivo (código {c}). Si pesa mucho, súbelo al servidor y usa: php bin/uc restore <archivo> --yes', ['c' => (int) ($f['error'] ?? 4)]));
+                $name = backup_import((string) $f['tmp_name'], (string) ($_POST['password'] ?? ''), true);
+                if (trim((string) ($_POST['confirm'] ?? '')) !== '') {
+                    $r = backup_restore($name, (string) $_POST['confirm'], !empty($_POST['with_config']));
+                    flash(t('Copia subida y restaurada. Antes se guardó el estado anterior en {s}.', ['s' => $r['safety']]) . ($r['warnings'] ? ' ' . implode(' ', $r['warnings']) : ''));
+                    admin_back('/copias');
+                }
+            } catch (UcError $ex) { admin_back('/copias', $ex); }
+            flash(t('Copia subida y comprobada: {n}. Para volver a ella, pulsa «Restaurar» en la lista.', ['n' => $name]));
+            admin_back('/copias');
+        }
+        if ($post && $match('/copias/(' . preg_quote(BK_PREFIX, '#') . '[0-9a-z-]+\.zip)/(descargar|borrar|restaurar)')) {
+            [$name, $act] = [$m[1], $m[2]];
+            try {
+                if ($act === 'borrar') { backup_delete($name); flash(t('Copia borrada.')); admin_back('/copias'); }
+                if ($act === 'restaurar') {
+                    $r = backup_restore($name, (string) ($_POST['confirm'] ?? ''), !empty($_POST['with_config']));
+                    flash(t('Restaurada {n}. Antes se guardó el estado anterior en {s}.', ['n' => $name, 's' => $r['safety']]) . ($r['warnings'] ? ' ' . implode(' ', $r['warnings']) : ''));
+                    admin_back('/copias');
+                }
+                admin_backup_download($name, (string) ($_POST['password'] ?? ''));
+                return;
+            } catch (UcError $ex) { admin_back('/copias', $ex); }
+        }
+
+        // ---- actualizaciones
+        if ($path === '/actualizaciones' && !$post) {
+            admin_render('updates', '/actualizaciones', ['title' => t('Actualizaciones'), 'st' => update_status()]);
+            return;
+        }
+        if ($path === '/actualizaciones/buscar' && $post) {
+            $st = update_check();
+            flash($st['error'] !== '' ? t('No se ha podido comprobar: {e}', ['e' => $st['error']]) : ($st['latest'] ? t('Hay una versión nueva: {v}.', ['v' => $st['latest']['version']]) : t('Tienes la última versión.')), $st['error'] !== '' ? 'error' : 'ok');
+            admin_back('/actualizaciones');
+        }
+        if ($path === '/actualizaciones/ajustes' && $post) {
+            settings_save(['update_check_daily' => !empty($_POST['update_check_daily']) ? '1' : '0']);
+            audit('update.settings', !empty($_POST['update_check_daily']) ? 'buscar a diario' : 'solo a mano');
+            flash(t('Guardado.'));
+            admin_back('/actualizaciones');
+        }
+        if ($path === '/actualizaciones/actualizar' && $post) {
+            if (($_POST['confirm'] ?? '') !== '1') admin_back('/actualizaciones', new UcError(t('Marca la casilla de confirmación para actualizar.')));
+            try { $r = update_run_remote($u['email']); } catch (UcError $ex) { admin_back('/actualizaciones', $ex); }
+            // La segunda mitad la hace la siguiente petición, ya con el código nuevo (public/index.php).
+            redirect('/admin/actualizaciones?fin=' . rawurlencode($r['to']));
+        }
+        if ($path === '/actualizaciones/volver' && $post) {
+            if (($_POST['confirm'] ?? '') !== '1') admin_back('/actualizaciones', new UcError(t('Marca la casilla de confirmación.')));
+            try { $r = update_manual_rollback($u['email']); flash($r['message']); } catch (UcError $ex) { admin_back('/actualizaciones', $ex); }
+            admin_back('/actualizaciones');
+        }
+
         // ---- personas
         if ($path === '/usuarios' && !$post) {
             admin_render('users', '/usuarios', ['title' => t('Personas'), 'users' => rows('SELECT * FROM users ORDER BY active DESC, role, name'),
@@ -381,6 +459,31 @@ function admin_download(string $name, string $mime, string $body): void
     header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9._-]/', '_', $name) . '"');
     header('Cache-Control: no-store');
     echo $body;
+}
+
+/**
+ * Descarga de una copia (solo por POST con CSRF desde el panel; data/backups nunca se sirve). Con contraseña, se cifra
+ * antes en un temporal que se borra al terminar.
+ */
+function admin_backup_download(string $name, string $password): void
+{
+    $path = backup_path($name);
+    $tmp = null;
+    if ($password !== '') {
+        $tmp = tempnam(bk_dir(), '.cif');
+        bk_encrypt_file($path, $tmp, $password);
+        $path = $tmp;
+        $name = preg_replace('/\.zip$/', '.ucbk', $name);
+    }
+    audit('backup.download', $name . ($tmp ? ' (cifrada)' : ''));
+    session_write_close();
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="' . $name . '"');
+    header('Content-Length: ' . filesize($path));
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+    readfile($path);
+    if ($tmp) @unlink($tmp);
 }
 
 /** Nodos para un desplegable: «Cocina › Línea › Blanco», en orden de árbol. */

@@ -11,8 +11,22 @@ declare(strict_types=1);
 //                                  ficticias (@example.com). Solo para enseñar la app: nunca en una instalación real.
 //   token --name=ADRI --email=persona@x.com [--scopes=read,write]   crea un token MCP y lo muestra UNA vez
 //   reset-link --email=persona@x.com                                 enlace de 72 h para poner la contraseña
+//   backup [--auto]                copia de seguridad ahora (con --auto, solo si toca según Ajustes; para cron)
+//   backups                        lista de copias
+//   restore <archivo.zip|copia> [--password=…] [--with-config] --yes
+//                                  restaura una copia (antes hace otra del estado actual); --with-config repone también la clave
+//   update:check                   busca versión nueva (la única llamada de salida de la aplicación)
+//   update --yes                   actualiza a la última versión (copia previa, verificación, vuelta atrás si falla)
+//   update:finish                  termina (o deshace) una actualización pendiente
 
 if (PHP_SAPI !== 'cli') exit(1);
+// Terminar una actualización se hace ANTES de cargar la aplicación (el código acaba de cambiar).
+if (($argv[1] ?? '') === 'update:finish') {
+    require dirname(__DIR__) . '/app/update_finish.php';
+    $r = uc_update_finish_entry();
+    fwrite(STDOUT, ($r === null ? 'No hay ninguna actualización pendiente.' : ($r === 'ok' ? 'Actualización terminada.' : 'La actualización falló y se ha vuelto a la versión anterior.')) . "\n");
+    exit($r === 'rolled_back' ? 1 : 0);
+}
 require dirname(__DIR__) . '/app/bootstrap.php';
 
 $cmd = $argv[1] ?? '';
@@ -54,8 +68,37 @@ try {
             $u = user_by_email((string) ($opt['email'] ?? '')) ?? $fail('No existe esa persona (--email).');
             $out(reset_link(password_reset_create((int) $u['id'], INVITE_TTL)));
             break;
+        case 'backup':
+            if (!is_installed()) $fail('Primero instala.');
+            if (isset($opt['auto'])) { $b = backup_auto_tick(); $out($b ? "Copia automática: {$b['name']}" : 'No toca copia automática (o están desactivadas en Ajustes).'); break; }
+            $b = backup_create();
+            $out("Copia hecha: data/backups/{$b['name']} (" . bk_human_size($b['size']) . '). Contiene la clave de la instalación: guárdala como una contraseña.');
+            break;
+        case 'backups':
+            foreach (backup_list() as $b) $out("{$b['name']}\t" . bk_human_size($b['size']) . "\tv{$b['version']}" . ($b['auto'] ? "\tautomática" : ''));
+            break;
+        case 'restore':
+            if (!is_installed()) $fail('Primero instala.');
+            $file = (string) ($argv[2] ?? '');
+            if ($file === '' || str_starts_with($file, '--')) $fail('Indica la copia: php bin/uc restore <archivo.zip | nombre de la lista> --yes');
+            if (!isset($opt['yes'])) $fail('Restaurar sustituye todos los datos actuales (antes se hace una copia de ellos). Repite con --yes para confirmarlo.');
+            $name = bk_valid_name(basename($file)) && is_file(bk_dir() . '/' . basename($file)) ? basename($file) : backup_import($file, (string) ($opt['password'] ?? ''));
+            $r = backup_restore($name, 'RESTAURAR', isset($opt['with-config']));
+            $out("Restaurada $name. Copia del estado anterior: {$r['safety']}.");
+            foreach ($r['warnings'] as $w) $out("Aviso: $w");
+            break;
+        case 'update:check':
+            $st = update_check();
+            $out($st['error'] !== '' ? "No se ha podido comprobar: {$st['error']}" : ($st['latest'] ? "Hay versión nueva: {$st['latest']['version']} (tienes " . UC_VERSION . ')' : 'Tienes la última versión (' . UC_VERSION . ').'));
+            break;
+        case 'update':
+            if (!isset($opt['yes'])) $fail('Actualizar cambia el código (antes se hace una copia de seguridad). Repite con --yes para confirmarlo.');
+            $r = update_run_remote('cli');
+            $out("Código cambiado de la {$r['from']} a la {$r['to']}. Terminando…");
+            $proc = proc_open([PHP_BINARY, __FILE__, 'update:finish'], [1 => STDOUT, 2 => STDERR], $pipes);
+            exit($proc ? proc_close($proc) : 1);
         default:
-            $out("Uso: php bin/uc install|sample|demo|token|reset-link [opciones]  (ver la cabecera de bin/uc)");
+            $out("Uso: php bin/uc install|sample|demo|token|reset-link|backup|backups|restore|update:check|update|update:finish [opciones]  (ver la cabecera de bin/uc)");
             exit($cmd === '' || $cmd === 'help' ? 0 : 1);
     }
 } catch (UcError $ex) {

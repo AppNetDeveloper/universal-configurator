@@ -5,3 +5,6 @@
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Paquetes de versión (bin/release)
+/dist/
