@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 /**
  * Copias de seguridad (mismo patrón que Universal Web, en .zip):
- *  - Qué lleva: la base de datos (VACUUM INTO: copia consistente, nunca el archivo en caliente), data/config.php (la
- *    clave secreta con la que se cifra la contraseña SMTP y se firman cookies y enlaces: la copia es SENSIBLE), las
- *    imágenes subidas (data/uploads) y manifest.json (aplicación, versión, esquema, fecha y sha256 de cada archivo).
+ *  - Qué lleva: la base de datos (VACUUM INTO: copia consistente, nunca el archivo en caliente), la configuración de
+ *    data/config.php como DATOS (config.json: la clave secreta con la que se cifra la contraseña SMTP y se firman
+ *    cookies y enlaces —la copia es SENSIBLE—, la zona horaria…), las imágenes subidas (data/uploads) y manifest.json
+ *    (aplicación, versión, esquema, fecha y sha256 de cada archivo). NUNCA lleva ni restaura código: un config.php
+ *    venido de un zip no se copia ni se incluye jamás (sería ejecutar lo que traiga). Al restaurar las claves, la app
+ *    valida config.json y escribe ella su propio config.php con var_export.
  *  - Dónde: data/backups/ (fuera de public/; se descargan solo desde el panel, con sesión de administrador).
  *  - Cifrado opcional AL DESCARGAR con una contraseña: libsodium (Argon2id + XChaCha20-Poly1305 por trozos).
  *  - Restaurar (panel o `bin/uc restore`): valida rutas (ni ../ ni absolutas ni enlaces), tamaños, el manifest y cada
@@ -22,7 +25,9 @@ const BK_MAX_UNPACKED = 2 * 1024 * 1024 * 1024; // anti «zip bomb»
 const BK_MAX_ENTRIES = 20000;
 const BK_CHUNK = 65536;
 /** Lo único que puede traer una copia. Todo lo demás (../, rutas absolutas, otros nombres) la invalida. */
-const BK_ALLOWED = '#^(manifest\.json|configurator\.sqlite|config\.php|uploads/[a-f0-9]{24}\.(png|jpg|webp))$#';
+const BK_ALLOWED = '#^(manifest\.json|configurator\.sqlite|config\.json|config\.php|uploads/[a-f0-9]{24}\.(png|jpg|webp))$#';
+/** Claves de config.json que se restauran, con su comprobación. Cualquier otra invalida la copia. */
+const BK_CONFIG_KEYS = ['secret', 'timezone', 'debug', 'installed_at', 'version'];
 
 function bk_dir(): string
 {
@@ -79,16 +84,17 @@ function backup_create(bool $auto = false, string $tag = ''): array
         $db = "$work/configurator.sqlite";
         db()->exec('VACUUM INTO ' . db()->quote($db)); // copia consistente, aunque haya escrituras a la vez
         $files['configurator.sqlite'] = $db;
-        if (is_file(UC_DATA . '/config.php')) $files['config.php'] = UC_DATA . '/config.php';
+        $cfg = array_intersect_key(config(), array_flip(BK_CONFIG_KEYS));
+        if ($cfg) { file_put_contents("$work/config.json", json_enc($cfg, true)); $files['config.json'] = "$work/config.json"; }
         foreach (glob(uploads_dir() . '/*') ?: [] as $f) {
             $base = basename($f);
             if (is_file($f) && !is_link($f) && preg_match(BK_ALLOWED, "uploads/$base")) $files["uploads/$base"] = $f;
         }
         $manifest = ['app' => 'universal-configurator', 'format' => 1, 'version' => UC_VERSION, 'schema' => UC_SCHEMA, 'created_at' => date('c'),
-            'created_by' => Actor::$name, 'auto' => $auto, 'includes_config' => isset($files['config.php']),
+            'created_by' => Actor::$name, 'auto' => $auto, 'includes_config' => isset($files['config.json']),
             'counts' => ['configurations' => (int) val('SELECT COUNT(*) FROM configurations'), 'nodes' => (int) val('SELECT COUNT(*) FROM nodes'),
-                'users' => (int) val('SELECT COUNT(*) FROM users'), 'uploads' => count($files) - 1 - (int) isset($files['config.php'])],
-            'note' => 'Incluye data/config.php (la clave secreta de la instalación): guarda esta copia como una contraseña.', 'files' => []];
+                'users' => (int) val('SELECT COUNT(*) FROM users'), 'uploads' => count($files) - 1 - (int) isset($files['config.json'])],
+            'note' => 'Incluye config.json con la clave secreta de la instalación: guarda esta copia como una contraseña.', 'files' => []];
         foreach ($files as $rel => $abs) $manifest['files'][$rel] = ['sha256' => hash_file('sha256', $abs), 'size' => (int) filesize($abs)];
         $name = BK_PREFIX . date('Ymd-His') . ($auto ? '-auto' : ($tag !== '' ? '-' . preg_replace('/[^a-z0-9]/', '', strtolower($tag)) : '')) . '.zip';
         $n = 1;
@@ -241,10 +247,11 @@ function bk_validate_extract(string $zipFile, string $work): array
         sort($present);
         if ($listed !== $present) throw new UcError(t('Los archivos de la copia no coinciden con su manifest.json.'));
         foreach ($present as $rel) {
-            $dest = "$work/$rel";
-            if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0700, true);
+            // Un config.php (copias de antes) NUNCA se escribe en disco: solo se comprueba su huella y se ignora.
+            $dest = $rel === 'config.php' ? null : "$work/$rel";
+            if ($dest !== null && !is_dir(dirname($dest))) mkdir(dirname($dest), 0700, true);
             $in = $z->getStream($rel);
-            $out = fopen($dest, 'wb');
+            $out = $dest === null ? fopen('php://memory', 'wb') : fopen($dest, 'wb');
             if (!$in || !$out) throw new UcError(t('No se pudo extraer «{n}».', ['n' => $rel]));
             $ctx = hash_init('sha256');
             $size = 0;
@@ -260,6 +267,13 @@ function bk_validate_extract(string $zipFile, string $work): array
             if (!hash_equals((string) ($m['files'][$rel]['sha256'] ?? ''), hash_final($ctx))) {
                 throw new UcError(t('La huella (sha256) de «{n}» no coincide: la copia está dañada o la han cambiado. No se ha cambiado nada.', ['n' => $rel]));
             }
+            // Las imágenes, con su extensión y su contenido comprobados (van a data/uploads, nunca a app/, public/ ni bin/).
+            if (str_starts_with($rel, 'uploads/')) {
+                $ext = pathinfo($rel, PATHINFO_EXTENSION);
+                $info = @getimagesize($dest);
+                $want = ['png' => IMAGETYPE_PNG, 'jpg' => IMAGETYPE_JPEG, 'webp' => IMAGETYPE_WEBP][$ext];
+                if (!$info || $info[2] !== $want) throw new UcError(t('«{n}» no es una imagen {e} de verdad: la copia no se restaura. No se ha cambiado nada.', ['n' => $rel, 'e' => strtoupper($ext)]));
+            }
         }
     } finally {
         $z->close();
@@ -271,6 +285,36 @@ function bk_validate_extract(string $zipFile, string $work): array
     } catch (Throwable) { $ok = false; }
     if (!$ok) throw new UcError(t('La base de datos de la copia está dañada.'));
     return $m;
+}
+
+/**
+ * Lee y valida config.json de una copia: solo las claves conocidas, escalares, con su formato. Lanza si algo no cuadra.
+ */
+function bk_config_from_json(string $file): array
+{
+    $c = json_decode((string) file_get_contents($file), true);
+    $bad = fn(string $why) => new UcError(t('config.json de la copia no es válido ({w}): no se restaura nada.', ['w' => $why]));
+    if (!is_array($c) || array_is_list($c)) throw $bad(t('no es un objeto'));
+    foreach ($c as $k => $v) {
+        if (!in_array($k, BK_CONFIG_KEYS, true)) throw $bad(t('clave inesperada «{k}»', ['k' => mb_substr((string) $k, 0, 40)]));
+        if (!is_scalar($v) && $v !== null) throw $bad(t('«{k}» no es un valor simple', ['k' => $k]));
+    }
+    if (!is_string($c['secret'] ?? null) || !preg_match('/^[a-f0-9]{64}$/', $c['secret'])) throw $bad(t('la clave secreta no tiene el formato esperado'));
+    if (isset($c['timezone']) && (!is_string($c['timezone']) || !in_array($c['timezone'], timezone_identifiers_list(), true))) throw $bad(t('zona horaria desconocida'));
+    if (isset($c['debug']) && !is_bool($c['debug'])) throw $bad(t('debug no es verdadero o falso'));
+    if (isset($c['installed_at']) && (!is_string($c['installed_at']) || strlen($c['installed_at']) > 40 || !strtotime($c['installed_at']))) throw $bad(t('fecha de instalación no válida'));
+    if (isset($c['version']) && (!is_string($c['version']) || !preg_match('/^\d+\.\d+\.\d+$/', $c['version']))) throw $bad(t('versión no válida'));
+    return $c;
+}
+
+/** Escribe data/config.php con lo validado (lo escribe la app con var_export; nunca se copia uno de fuera). */
+function bk_write_config(array $c): void
+{
+    $cur = config();
+    $new = ['secret' => $c['secret'], 'timezone' => $c['timezone'] ?? ($cur['timezone'] ?? 'Europe/Madrid'), 'debug' => (bool) ($c['debug'] ?? false),
+        'installed_at' => $c['installed_at'] ?? ($cur['installed_at'] ?? date('c')), 'version' => UC_VERSION];
+    install_write_atomic(UC_DATA . '/config.php', "<?php\nreturn " . var_export($new, true) . ";\n");
+    @chmod(UC_DATA . '/config.php', 0600);
 }
 
 /**
@@ -290,6 +334,7 @@ function backup_import(string $path, string $password = '', bool $fromHttp = fal
         if ($head === BK_MAGIC) { bk_decrypt_file($path, "$work/plain.zip", $password); $zip = "$work/plain.zip"; }
         elseif (strncmp($head, "PK\x03\x04", 4) !== 0) throw new UcError(t('El archivo no es una copia del configurador (.zip o cifrada).'));
         bk_validate_extract($zip, "$work/x");
+        if (is_file("$work/x/config.json")) bk_config_from_json("$work/x/config.json");
         $name = BK_PREFIX . date('Ymd-His') . '-subida.zip';
         $n = 1;
         while (is_file(bk_dir() . "/$name")) $name = BK_PREFIX . date('Ymd-His') . '-subida' . ($n++) . '.zip';
@@ -316,6 +361,7 @@ function backup_restore(string $name, string $confirm, bool $withConfig = false)
     $warnings = [];
     try {
         $m = bk_validate_extract($src, "$work/x");
+        $restoredConfig = is_file("$work/x/config.json") ? bk_config_from_json("$work/x/config.json") : null;
         $safety = backup_create(false, 'antes');
         uc_maintenance_on('restore', 10);
         try {
@@ -333,10 +379,13 @@ function backup_restore(string $name, string $confirm, bool $withConfig = false)
             if (!is_dir($new)) mkdir($new, 0750, true);
             @rename($up, $old);
             if (!@rename($new, $up)) { @rename($old, $up); throw new UcError(t('No se pudieron reponer las imágenes.')); }
-            if ($withConfig && is_file("$work/x/config.php")) {
-                if (!@copy("$work/x/config.php", UC_DATA . '/config.php')) throw new UcError(t('No se pudo reponer config.php.'));
-            } elseif (!empty($m['includes_config'])) {
-                $warnings[] = t('Se ha conservado la clave de esta instalación (config.php). Si la copia viene de otra, la contraseña SMTP de allí no se podrá leer: vuelve a escribirla en Ajustes.');
+            if ($withConfig && $restoredConfig !== null) {
+                bk_write_config($restoredConfig);
+            } elseif (is_file("$work/x/config.json")) {
+                $warnings[] = t('Se ha conservado la clave de esta instalación. Si la copia viene de otra, la contraseña SMTP guardada allí no se podrá descifrar: vuelve a escribirla en Ajustes.');
+            }
+            if (isset($m['files']['config.php'])) {
+                $warnings[] = t('La copia trae un config.php de una versión antigua: no se restaura nunca (es código). Se ha conservado la configuración actual.');
             }
             ensure_schema(); // una copia de una versión anterior se pone al día
         } finally {

@@ -2,7 +2,7 @@
 <?php /** @var array $backups @var int $lastAuto */ ?>
 <div class="page-head"><h1><?= te('Copias de seguridad') ?></h1>
   <form method="post" action="/admin/copias/crear" class="inline"><?= csrf_field() ?><button class="btn btn-primary" type="submit"><?= te('Hacer copia ahora') ?></button></form></div>
-<div class="notice key-warn"><strong><?= te('La copia contiene las claves de la instalación') ?></strong> — <?= te('lleva la base de datos, las imágenes y data/config.php, con la clave que cifra la contraseña del correo y firma los enlaces. Guárdala como guardas una contraseña; al descargarla puedes cifrarla.') ?></div>
+<div class="notice key-warn"><strong><?= te('La copia contiene las claves de la instalación') ?></strong> — <?= te('lleva la base de datos, las imágenes y la configuración con la clave que cifra la contraseña del correo y firma los enlaces. Guárdala como guardas una contraseña; al descargarla puedes cifrarla.') ?></div>
 <div class="two-col">
   <div class="stack">
     <?php if (!$backups): ?><div class="empty"><p><?= te('Todavía no hay copias. Haz la primera con «Hacer copia ahora».') ?></p></div><?php else: ?>
@@ -27,7 +27,7 @@
                 <?= csrf_field() ?>
                 <p class="small"><?= te('Restaurar sustituye TODOS los datos de ahora por los de esta copia (antes se guarda una copia de los de ahora). Escribe RESTAURAR para confirmarlo.') ?></p>
                 <input name="confirm" autocomplete="off" placeholder="RESTAURAR" aria-label="<?= te('Escribe RESTAURAR') ?>">
-                <label class="check"><input type="checkbox" name="with_config" value="1"> <span><?= te('Reponer también la clave (config.php): solo si la copia viene de otra instalación') ?></span></label>
+                <label class="check"><input type="checkbox" name="with_config" value="1"> <span><?= te('Restaurar también las claves (solo si la copia viene de otra instalación; si no, se conserva la de aquí y la contraseña SMTP de la copia puede no leerse)') ?></span></label>
                 <button class="btn btn-danger btn-sm" type="submit"><?= te('Restaurar') ?></button>
               </form>
               <form method="post" action="/admin/copias/<?= e($b['name']) ?>/borrar" data-confirm="<?= te('¿Borrar la copia {n}?', ['n' => $b['name']]) ?>"><?= csrf_field() ?><button class="btn btn-ghost btn-sm danger" type="submit"><?= te('Borrar') ?></button></form>
@@ -56,6 +56,7 @@
       <input type="file" name="copia" accept=".zip,.ucbk" required>
       <label><?= te('Contraseña (si está cifrada)') ?><input type="password" name="password" autocomplete="off"></label>
       <label><?= te('Para restaurarla ya, escribe RESTAURAR (si no, solo se añade a la lista)') ?><input name="confirm" autocomplete="off" placeholder="RESTAURAR"></label>
+      <label class="check"><input type="checkbox" name="with_config" value="1"> <span><?= te('Restaurar también las claves de la copia (por defecto se conserva la clave de esta instalación)') ?></span></label>
       <button class="btn btn-ghost" type="submit"><?= te('Subir') ?></button>
     </form>
   </div>
